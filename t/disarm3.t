@@ -1,6 +1,6 @@
 alt down
-m down
-m up
+7 down
+7 up
 alt up
 
 alt down
