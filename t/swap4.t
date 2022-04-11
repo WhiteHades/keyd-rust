@@ -17,10 +17,6 @@ alt up
 control up
 tab down
 tab up
-alt down
-control down
-alt up
-control up
 shift down
 x down
 x up
