@@ -10,6 +10,11 @@ x down
 200ms
 = up
 x up
+= down
+300ms
+x down
+= up
+x up
 
 a down
 a up
@@ -18,4 +23,8 @@ b up
 a down
 x down
 a up
+x up
+b down
+x down
+b up
 x up
