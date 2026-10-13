@@ -1,0 +1,34 @@
+[package]
+name = "keyd"
+version = "2.6.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+description = "Pure Rust port of the keyd keyboard remapping daemon"
+publish = false
+default-run = "keyd"
+
+[lib]
+path = "src/lib.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[[example]]
+name = "keyboard-e2e"
+path = "t/keyboard-e2e.rs"
+
+[[bin]]
+name = "generate_xcompose"
+path = "src/bin/generate_xcompose.rs"
+
+[[bin]]
+name = "keyd-application-mapper"
+path = "src/bin/keyd-application-mapper.rs"
+
+[[bin]]
+name = "dump-xkb-config"
+path = "src/bin/dump-xkb-config.rs"
+
