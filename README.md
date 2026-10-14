@@ -16,18 +16,6 @@
 keyd-rust remaps Linux keyboards in Wayland, X11 and the console.
 It is a Rust rewrite of [keyd](https://github.com/rvaiya/keyd).
 
-## Differences from keyd
-
-| Comparison | Original keyd | keyd-rust |
-| --- | --- | --- |
-| Implementation | C daemon, some Python tools | Rust, no C engine or bridge |
-| Double-tap action | No `overloadd` | Tap, double tap, immediate held layer; configurable timing |
-| Device removal | Keeps removed-device descriptors | Closes them |
-| Existing mappings | Original trace fixtures | All 94 original traces passed |
-
-Linux kernel checks passed on x86_64, i686 and ARM64, including x86_64 musl.
-Lower latency, memory use or binary size have not been established.
-
 ## Install
 
 You need Rust 1.98+, Cargo, make and scdoc. On Arch Linux:
@@ -126,5 +114,16 @@ Treat `keyd-rust` group membership as root access.
 Read the [manual](docs/keyd-rust.scdoc), or `man keyd-rust`, for all actions, options
 and Unicode setup. More examples are in [examples](examples/) and the
 [application mapper](docs/keyd-rust-application-mapper.scdoc) manual.
+
+## Differences from keyd
+
+| Comparison | Original keyd | keyd-rust |
+| --- | --- | --- |
+| Implementation | C daemon, some Python tools | Rust, no C engine or bridge |
+| Double-tap action | No `overloadd` | Tap, double tap, immediate held layer; configurable timing |
+| Device removal | Keeps removed-device descriptors | Closes them |
+
+Linux kernel checks passed on x86_64, i686 and ARM64, including x86_64 musl.
+Lower latency, memory use or binary size have not been established.
 
 MIT license. See [LICENSE](LICENSE).
