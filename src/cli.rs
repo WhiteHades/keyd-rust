@@ -41,13 +41,13 @@ pub fn command(name: &OsStr) -> Command {
 
 pub fn help(output: &mut impl Write) -> io::Result<()> {
     output.write_all(concat!(
-        "usage: keyd [-v] [-h] [command] [<args>]\n\n",
+        "usage: keyd-rust [-v] [-h] [command] [<args>]\n\n",
         "Commands:\n",
         "    monitor [-t]                   Print key events in real time.\n",
         "    check [<config file>...]       Check the supplied config files for errors. If no files are supplied, all .conf files in the config directory will be checked.\n",
         "    list-keys                      Print a list of valid key names.\n",
         "    reload                         Trigger a reload .\n",
-        "    listen                         Print layer state changes of the running keyd daemon to stdout.\n",
+        "    listen                         Print layer state changes of the running keyd-rust daemon to stdout.\n",
         "    bind <binding> [<binding>...]  Add the supplied bindings to all loaded configs.\n",
         "Options:\n",
         "    -v, --version                  Print the current version and exit.\n",
@@ -56,7 +56,7 @@ pub fn help(output: &mut impl Write) -> io::Result<()> {
 }
 
 pub fn version(output: &mut impl Write) -> io::Result<()> {
-    writeln!(output, "keyd {}", crate::BUILD_VERSION)
+    writeln!(output, "keyd-rust {}", crate::BUILD_VERSION)
 }
 
 pub fn list_keys(output: &mut impl Write) -> io::Result<()> {

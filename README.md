@@ -1,44 +1,41 @@
-# keyd-rust
+<div align="center">
+<pre>
+ _                  _                    _
+| | _____ _   _  __| |      _ __ _   _ ___| |_
+| |/ / _ \ | | |/ _` |_____| '__| | | / __| __|
+|   &lt;  __/ |_| | (_| |_____| |  | |_| \__ \ |_
+|_|\_\___|\__, |\__,_|     |_|   \__,_|___/\__|
+          |___/
+</pre>
 
-keyd-rust is a maintained Rust rewrite of [keyd](https://github.com/rvaiya/keyd)
-for Linux. The goal is a small, fast, memory-efficient keyboard remapping daemon
-with simple controls and direct access to evdev and uinput.
+![Linux](https://img.shields.io/badge/Linux-grey)
+![Rust](https://img.shields.io/badge/Rust-1.98%2B-orange)
+[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+</div>
 
-## Design
+A Rust keyboard remapping daemon based on [keyd](https://github.com/rvaiya/keyd).
 
-- Use pure Rust, without a C engine, C bridge, or heavyweight runtime.
-- Preserve keyd's configuration syntax, commands, and keyboard behavior.
-- Keep the input loop small and avoid unnecessary allocation or background work.
-- Measure latency, CPU use, and memory before making performance claims.
+## Install
 
-Existing behavior comes first. Optimizations and new controls must pass the same
-compatibility checks, including interruption, release, and failure handling.
+Use Rust 1.98 or newer and scdoc. On Arch Linux, build a pacman package:
 
-## Configuration
-
-The compatibility contract includes device-specific configurations, layers,
-oneshot modifiers, tap/hold actions, chords, macros, Unicode input, and dynamic
-bindings through IPC. Configuration remains under `/etc/keyd/`.
-
-```ini
-[ids]
-*
-
-[main]
-# Escape on tap, Control while held.
-capslock = overload(control, esc)
+```sh
+bash packaging/build
+sudo pacman -U .tmp/package/*.pkg.tar.zst
 ```
 
-Use the [configuration and command reference](docs/keyd.scdoc) and
-[example configurations](examples/). The emergency
-`Backspace+Escape+Enter` sequence remains part of the keyboard behavior contract.
+On other Linux systems, run `make && make man && sudo make install`.
+Remove the original keyd package before starting the new service.
 
-The opt-in `overloadd(nav, semicolon, enter, 200)` action supports safe `;;`
-without delaying held navigation. It accepts two key sequences and emits Enter
-on the second release, only before the first tap's 200 ms deadline. A lone tap
-waits for that deadline; an intervening key flushes punctuation first.
+## Use
 
-## License
+Put a configuration in `/etc/keyd-rust/`, then start the daemon:
 
-MIT. This project preserves keyd's original attribution and license in
-[LICENSE](LICENSE).
+```sh
+sudo systemctl enable --now keyd-rust
+sudo keyd-rust reload
+```
+
+See the [manual](docs/keyd-rust.scdoc) and [examples](examples/).
+
+MIT license. See [LICENSE](LICENSE).

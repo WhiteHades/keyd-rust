@@ -1,14 +1,15 @@
 [package]
-name = "keyd"
+name = "keyd-rust"
 version = "2.6.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-description = "Pure Rust port of the keyd keyboard remapping daemon"
+description = "keyd-rust keyboard remapping daemon, a pure Rust port of keyd"
 publish = false
-default-run = "keyd"
+default-run = "keyd-rust"
 
 [lib]
+name = "keyd_rust"
 path = "src/lib.rs"
 
 [profile.release]
@@ -21,16 +22,16 @@ name = "keyboard-e2e"
 path = "t/keyboard-e2e.rs"
 
 [[bin]]
-name = "generate_xcompose"
-path = "src/bin/generate_xcompose.rs"
+name = "keyd-rust-generate-xcompose"
+path = "src/bin/keyd-rust-generate-xcompose.rs"
 
 [[bin]]
-name = "keyd-application-mapper"
-path = "src/bin/keyd-application-mapper.rs"
+name = "keyd-rust-application-mapper"
+path = "src/bin/keyd-rust-application-mapper.rs"
 
 [[bin]]
-name = "dump-xkb-config"
-path = "src/bin/dump-xkb-config.rs"
+name = "keyd-rust-dump-xkb-config"
+path = "src/bin/keyd-rust-dump-xkb-config.rs"
 
 [[example]]
 name = "double-tap-e2e"

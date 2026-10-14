@@ -1,0 +1,14 @@
+[Unit]
+Description=keyd-rust USB gadget setup
+Requires=systemd-modules-load.service,keyd-rust.service
+Before=keyd-rust.service
+After=systemd-modules-load.service
+
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash @PREFIX@/bin/keyd-rust-usb-gadget.sh
+
+[Install]
+WantedBy=keyd-rust.service

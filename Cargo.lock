@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "keyd"
+name = "keyd-rust"
 version = "2.6.0"

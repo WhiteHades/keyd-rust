@@ -1,4 +1,4 @@
-use keyd::{appmapper, runtime};
+use keyd_rust::{appmapper, runtime};
 use std::io::{self, Write};
 use std::os::fd::AsFd;
 

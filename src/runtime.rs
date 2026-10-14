@@ -438,7 +438,7 @@ pub fn set_keyd_group() -> io::Result<()> {
     let Some(id) = nss::keyd_group_id()? else {
         let stderr = io::stderr();
         FdIo::new(stderr.as_fd())?.write_all(
-            b"WARNING: failed to set effective group to \"keyd\" (make sure the group exists)\n",
+            b"WARNING: failed to set effective group to \"keyd-rust\" (make sure the group exists)\n",
         )?;
         return Ok(());
     };
@@ -540,7 +540,7 @@ pub(crate) fn daemonize(log: &std::path::Path) -> io::Result<()> {
     }
     let child = unsafe { fork_raw() };
     if child < 0 {
-        unsafe { child_error(b"keyd-application-mapper: fork failed\n") }
+        unsafe { child_error(b"keyd-rust-application-mapper: fork failed\n") }
     }
     if child != 0 {
         unsafe { child_exit(0) }
@@ -557,7 +557,7 @@ unsafe fn command_child(
     unsafe {
         let child = fork_raw();
         if child < 0 {
-            child_error(b"keyd: fork failed\n");
+            child_error(b"keyd-rust: fork failed\n");
         }
         if child != 0 {
             child_exit(0);
@@ -575,14 +575,14 @@ unsafe fn command_child(
             ],
         );
         if fd < 0 {
-            child_error(b"keyd: open /dev/null failed\n");
+            child_error(b"keyd-rust: open /dev/null failed\n");
         }
         for target in 0..3 {
             if fd as usize == target {
                 continue;
             }
             if syscall6(nr::DUP3, [fd as usize, target, 0, 0, 0, 0]) < 0 {
-                child_error(b"keyd: dup failed\n");
+                child_error(b"keyd-rust: dup failed\n");
             }
         }
         if fd > 2 {
@@ -593,7 +593,7 @@ unsafe fn command_child(
         if fd <= 2 {
             let other = if fd == 0 { 1 } else { 0 };
             if syscall6(nr::DUP3, [other, fd as usize, 0, 0, 0, 0]) < 0 {
-                child_error(b"keyd: dup failed\n");
+                child_error(b"keyd-rust: dup failed\n");
             }
         }
         syscall6(
@@ -607,7 +607,7 @@ unsafe fn command_child(
                 0,
             ],
         );
-        child_error(b"keyd: exec /bin/sh failed\n")
+        child_error(b"keyd-rust: exec /bin/sh failed\n")
     }
 }
 

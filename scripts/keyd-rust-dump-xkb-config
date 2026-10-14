@@ -2,4 +2,4 @@
 # Source-checkout entry point for the native XKB layout converter.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin dump-xkb-config -- "$@"
+exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin keyd-rust-dump-xkb-config -- "$@"

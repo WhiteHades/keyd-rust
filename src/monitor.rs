@@ -192,7 +192,7 @@ pub fn run(args: &[OsString]) -> io::Result<i32> {
     let output = unsafe { BorrowedFd::borrow_raw(1) };
     if args.len() == 1 && args[0] == "-h" {
         runtime::FdIo::new(output)?.write_all(
-            b"Usage: keyd monitor [-t]\n\n\t-t: Print the time in milliseconds between events.\n",
+            b"Usage: keyd-rust monitor [-t]\n\n\t-t: Print the time in milliseconds between events.\n",
         )?;
         return Ok(0);
     }

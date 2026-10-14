@@ -1,1 +1,1 @@
-g keyd
+g keyd-rust

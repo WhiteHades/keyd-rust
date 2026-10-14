@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+[[ $(id -u) != 0 ]] || { echo 'Build as a normal user.' >&2; exit 1; }
+[[ -z $(git status --porcelain --untracked-files=normal) ]] || { echo 'Commit source changes before packaging.' >&2; exit 1; }
+command -v rustc >/dev/null
+command -v cargo >/dev/null
+command -v scdoc >/dev/null
+export KEYD_RUST_COMMIT=$(git rev-parse HEAD)
+directory="$PWD/.tmp/package"
+mkdir -p -- "$directory"
+archive="$directory/keyd-rust-$KEYD_RUST_COMMIT.tar.gz"
+git archive --format=tar --prefix="keyd-rust-$KEYD_RUST_COMMIT/" "$KEYD_RUST_COMMIT" | gzip -n > "$archive"
+export KEYD_RUST_SOURCE_SHA256=$(sha256sum "$archive" | cut -d' ' -f1)
+cp packaging/PKGBUILD "$directory/PKGBUILD"
+cd -- "$directory"
+exec makepkg --force "$@"

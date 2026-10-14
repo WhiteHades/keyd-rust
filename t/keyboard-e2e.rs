@@ -1,6 +1,6 @@
-use keyd::config::{Config, config_parse};
-use keyd::keyboard::{KeyEvent, Keyboard, LayerState, Output};
-use keyd::keys::*;
+use keyd_rust::config::{Config, config_parse};
+use keyd_rust::keyboard::{KeyEvent, Keyboard, LayerState, Output};
+use keyd_rust::keys::*;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;

@@ -1,6 +1,6 @@
 // Rust port of scripts/dump-xkb-config. See LICENSE.
 
-use keyd::runtime::{self, FdIo};
+use keyd_rust::runtime::{self, FdIo};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -274,7 +274,7 @@ fn main() -> ExitCode {
         Err(error) => {
             let stderr = io::stderr();
             if let Ok(mut stderr) = FdIo::new(stderr.as_fd()) {
-                let _ = writeln!(stderr, "dump-xkb-config: {error}");
+                let _ = writeln!(stderr, "keyd-rust-dump-xkb-config: {error}");
             }
             ExitCode::FAILURE
         }

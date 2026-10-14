@@ -763,14 +763,19 @@ impl<O: Output> Keyboard<O> {
                     }
                     let pair = self.auxiliary_descriptor(d.args[1]);
                     let first = self.pending_tap.take();
-                    let first = first.filter(|tap| {
-                        if tap.descriptor == d && tap.layer == layer {
-                            true
-                        } else {
-                            self.emit_tap(tap.single, tap.mods, time);
-                            false
-                        }
-                    });
+                    let first = first
+                        .filter(|tap| {
+                            if tap.descriptor == d && tap.layer == layer {
+                                true
+                            } else {
+                                self.emit_tap(tap.single, tap.mods, time);
+                                false
+                            }
+                        })
+                        .map(|mut tap| {
+                            tap.expiration = time + pair.args[1] as i64;
+                            tap
+                        });
                     if let Some(slot) = self.cache_index(code) {
                         self.cache[slot].tap = Some(TapPress {
                             start: time,

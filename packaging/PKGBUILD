@@ -1,0 +1,30 @@
+_commit=${KEYD_RUST_COMMIT:?Build with packaging/build}
+[[ $_commit =~ ^[0-9a-f]{40}$ ]] || return 1
+pkgname=keyd-rust
+pkgver=2.6.0.r${_commit:0:7}
+pkgrel=1
+pkgdesc='Pure Rust keyboard remapping daemon'
+arch=('x86_64')
+url='https://github.com/WhiteHades/keyd-rust'
+license=('MIT')
+depends=('glibc' 'systemd')
+makedepends=('cargo' 'rust' 'scdoc')
+conflicts=('keyd')
+source=("keyd-rust-${_commit}.tar.gz")
+sha256sums=("${KEYD_RUST_SOURCE_SHA256:?Missing source checksum}")
+[[ ${sha256sums[0]} =~ ^[0-9a-f]{64}$ ]] || return 1
+options=('!debug' '!lto')
+
+build() {
+    cd "$srcdir/keyd-rust-${_commit}"
+    export CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=1
+    make PREFIX=/usr COMMIT="${_commit:0:7}" VKBD=uinput
+    make man
+}
+
+package() {
+    cd "$srcdir/keyd-rust-${_commit}"
+    make install DESTDIR="$pkgdir" PREFIX=/usr COMMIT="${_commit:0:7}" VKBD=uinput FORCE_SYSTEMD=1
+    rmdir "$pkgdir/etc/keyd-rust" "$pkgdir/etc"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/keyd-rust/LICENSE"
+}

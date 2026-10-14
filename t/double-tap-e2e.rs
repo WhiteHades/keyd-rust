@@ -1,6 +1,6 @@
-use keyd::config::{Config, config_add_entry, config_parse};
-use keyd::keyboard::{KeyEvent, Keyboard, LayerState, Output};
-use keyd::keys::*;
+use keyd_rust::config::{Config, config_add_entry, config_parse};
+use keyd_rust::keyboard::{KeyEvent, Keyboard, LayerState, Output};
+use keyd_rust::keys::*;
 use std::ffi::OsStr;
 
 #[derive(Default)]
@@ -54,6 +54,75 @@ fn main() {
     let path = std::env::args_os()
         .nth(1)
         .expect("workstation configuration path required");
+    // Physical pairs captured while the 120 ms setting emitted two semicolons.
+    for times in [[0, 68, 135, 248], [0, 75, 142, 232], [0, 97, 157, 270]] {
+        let mut k = keyboard(&path);
+        k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
+            .unwrap();
+        event(&mut k, KEYD_SEMICOLON, 1, times[0]);
+        event(&mut k, KEYD_SEMICOLON, 0, times[1]);
+        event(&mut k, KEYD_SEMICOLON, 1, times[2]);
+        assert!(k.output.0.is_empty());
+        event(&mut k, 0, 0, times[1] + 120);
+        assert!(k.output.0.is_empty());
+        event(&mut k, KEYD_SEMICOLON, 0, times[3]);
+        event(&mut k, 0, 0, times[3] + 120);
+        check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
+    }
+    for second_press in [129, 130, 131] {
+        let mut k = keyboard(&path);
+        k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
+            .unwrap();
+        tap(&mut k, KEYD_SEMICOLON, 0);
+        tap(&mut k, KEYD_SEMICOLON, second_press);
+        event(&mut k, 0, 0, 500);
+        if second_press < 130 {
+            check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
+        } else {
+            check(
+                &k,
+                &[
+                    (KEYD_SEMICOLON, 1),
+                    (KEYD_SEMICOLON, 0),
+                    (KEYD_SEMICOLON, 1),
+                    (KEYD_SEMICOLON, 0),
+                ],
+            );
+        }
+    }
+    let mut k = keyboard(&path);
+    k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
+        .unwrap();
+    event(&mut k, KEYD_SEMICOLON, 1, 0);
+    event(&mut k, KEYD_SEMICOLON, 0, 68);
+    assert_eq!(event(&mut k, KEYD_SEMICOLON, 1, 135), 120);
+    assert_eq!(event(&mut k, KEYD_SEMICOLON, 1, 200), 55);
+    assert_eq!(event(&mut k, KEYD_SEMICOLON, 0, 248), 0);
+    check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
+    let mut k = keyboard(&path);
+    k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
+        .unwrap();
+    event(&mut k, KEYD_SEMICOLON, 1, 0);
+    event(&mut k, KEYD_SEMICOLON, 0, 68);
+    event(&mut k, KEYD_SEMICOLON, 1, 135);
+    event(&mut k, 0, 0, 188);
+    event(&mut k, KEYD_J, 1, 200);
+    assert_eq!(
+        k.output.0,
+        [(KEYD_SEMICOLON, 1), (KEYD_SEMICOLON, 0), (KEYD_DOWN, 1)]
+    );
+    event(&mut k, KEYD_SEMICOLON, 0, 248);
+    event(&mut k, KEYD_J, 0, 249);
+    event(&mut k, 0, 0, 500);
+    check(
+        &k,
+        &[
+            (KEYD_SEMICOLON, 1),
+            (KEYD_SEMICOLON, 0),
+            (KEYD_DOWN, 1),
+            (KEYD_DOWN, 0),
+        ],
+    );
     let mut k = keyboard(&path);
     event(&mut k, KEYD_SEMICOLON, 1, 0);
     assert_eq!(event(&mut k, KEYD_SEMICOLON, 0, 10), 200);
@@ -186,13 +255,13 @@ fn main() {
         ],
     );
 
-    for second_release in [209, 210, 211, 500] {
+    for second_release in [209, 210, 211, 249, 250, 251, 500] {
         let mut k = keyboard(&path);
         tap(&mut k, KEYD_SEMICOLON, 0);
         event(&mut k, KEYD_SEMICOLON, 1, 50);
         event(&mut k, KEYD_SEMICOLON, 0, second_release);
         event(&mut k, 0, 0, 1000);
-        if second_release < 210 {
+        if second_release < 250 {
             check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
         } else {
             check(
@@ -223,7 +292,7 @@ fn main() {
         check(&k, &expected);
     }
 
-    for release in [129, 130, 131] {
+    for release in [129, 130, 131, 169, 170, 171] {
         let mut k = keyboard(&path);
         k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
             .unwrap();
@@ -231,7 +300,7 @@ fn main() {
         event(&mut k, KEYD_SEMICOLON, 1, 50);
         event(&mut k, KEYD_SEMICOLON, 0, release);
         event(&mut k, 0, 0, 300);
-        if release < 130 {
+        if release < 170 {
             check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
         } else {
             check(
@@ -449,7 +518,7 @@ fn main() {
     let mut config = config_parse(&path).unwrap();
     config
         .descriptors
-        .resize(keyd::config::MAX_DESCRIPTORS - 2, Default::default());
+        .resize(keyd_rust::config::MAX_DESCRIPTORS - 2, Default::default());
     assert!(
         config_add_entry(
             &mut config,
@@ -457,7 +526,7 @@ fn main() {
         )
         .is_err()
     );
-    assert_eq!(config.descriptors.len(), keyd::config::MAX_DESCRIPTORS);
+    assert_eq!(config.descriptors.len(), keyd_rust::config::MAX_DESCRIPTORS);
     println!(
         "double-tap E2E passed: punctuation deadlines, exact Enter, interruptions, immediate navigation, modifiers, RightAlt, boundary releases, repeated pairs, reset, and invalid actions"
     );

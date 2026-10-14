@@ -2,4 +2,4 @@
 # Regenerate the compose data and Rust Unicode table in the current directory.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin generate_xcompose -- "$@"
+exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin keyd-rust-generate-xcompose -- "$@"

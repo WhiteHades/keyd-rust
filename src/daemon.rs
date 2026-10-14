@@ -734,7 +734,11 @@ pub fn run() -> io::Result<i32> {
     runtime::set_realtime().map_err(|error| log::system_error("pthread_setschedparam", error))?;
     runtime::lock_memory().map_err(|error| log::system_error("mlockall", error))?;
     daemon.reload(&mut [])?;
-    log::stdout(0, "Starting keyd %s\n", &[crate::BUILD_VERSION.as_bytes()])?;
+    log::stdout(
+        0,
+        "Starting keyd-rust %s\n",
+        &[crate::BUILD_VERSION.as_bytes()],
+    )?;
     let mut event_loop = EventLoop::new()?;
     event_loop.add_fd(server.listener.as_fd())?;
     event_loop.announce_devices(|event, devices| daemon.handle(event, devices))?;

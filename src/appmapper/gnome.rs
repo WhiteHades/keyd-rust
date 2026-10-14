@@ -45,7 +45,7 @@ impl Monitor {
             super::output(format_args!(
                 r#"Gnome extension doesn't appear to be running:
 
-You will need to install the keyd gnome extension in order for the
+You will need to install the keyd-rust gnome extension in order for the
 application mapper to work correctly.
 
 This can usually be achieved by running:
@@ -56,10 +56,10 @@ mkdir -p ~/.local/share/gnome-shell/extensions
 Followed by:
 
 Gnome 42-44:
-    ln -s /usr/local/share/keyd/gnome-extension ~/.local/share/gnome-shell/extensions/keyd
+    ln -s /usr/local/share/keyd-rust/gnome-extension ~/.local/share/gnome-shell/extensions/keyd
 
 Gnome 45/46:
-    ln -s /usr/local/share/keyd/gnome-extension-45 ~/.local/share/gnome-shell/extensions/keyd
+    ln -s /usr/local/share/keyd-rust/gnome-extension-45 ~/.local/share/gnome-shell/extensions/keyd
 
 Finally restart Gnome and run:
 
@@ -67,7 +67,7 @@ Finally restart Gnome and run:
             gnome-extensions show keyd (verify the extension is enabled)
 
 NOTE:
-    You may need to adjust the above paths (e.g /usr/share/keyd/gnome-extension)
+    You may need to adjust the above paths (e.g /usr/share/keyd-rust/gnome-extension)
     depending on your distro.
 "#
             ))?;

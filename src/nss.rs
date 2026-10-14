@@ -10,7 +10,7 @@ pub(crate) fn keyd_group_id() -> io::Result<Option<u32>> {
         return Err(io::ErrorKind::Interrupted.into());
     }
     let mut child = match Command::new("/usr/bin/getent")
-        .args(["group", "keyd"])
+        .args(["group", "keyd-rust"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .stdout(Stdio::piped())

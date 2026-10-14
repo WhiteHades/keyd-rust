@@ -2,4 +2,4 @@
 # Source-checkout entry point. Installed packages use the native binary.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin keyd-application-mapper -- "$@"
+exec "${CARGO:-cargo}" run --quiet --locked --release --manifest-path "$root/Cargo.toml" --bin keyd-rust-application-mapper -- "$@"

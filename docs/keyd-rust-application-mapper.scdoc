@@ -1,0 +1,95 @@
+keyd-rust-application-mapper(1)
+
+# NAME
+
+keyd-rust-application-mapper - remap keys when window focus changes
+
+# SYNOPSIS
+
+*keyd-rust-application-mapper* [*-d*|*--daemonize*] [*-v*|*--verbose*]
+
+# OPTIONS
+
+*-v, --verbose*
+	Print window class and title names for use in the config file.
+
+*-d, --daemonize*
+	Run in the background and write output to _~/.config/keyd-rust/app.log_.
+
+# DESCRIPTION
+
+The mapper reads _~/.config/keyd-rust/app.conf_ and applies bindings when a
+matching window gets focus. The bindings override _/etc/keyd-rust/\*.conf_.
+
+The config file has the following form:
+
+```
+	[<filter>]
+
+	<expression 1>
+	<expression 2>
+	...
+```
+
+_<filter>_ has one of the following forms:
+
+```
+	\[<class exp>\]              # Match by window class
+	\[<class exp>|<title exp>\]  # Match by class and title
+```
+
+Each _<expression>_ is a valid argument to _keyd-rust bind_.
+See *Bindings* in *keyd-rust(1)*.
+
+_<class exp>_ and _<title exp>_ match window class and title names.
+Use \* as a wildcard. For example, _[gnome|\*find\*]_ matches class _gnome_
+with _find_ anywhere in the title.
+
+For example:
+
+```
+	[kitty]
+
+	alt.] = C-tab
+	alt.[ = C-S-tab
+	alt.t = C-S-t
+
+	[st-*]
+
+	alt.1  = macro(Inside space st)
+
+	[chromium]
+
+	control.1 = macro(Inside space chrome!)
+	alt.] = C-tab
+	alt.[ = C-S-tab
+	alt.t = C-t
+```
+
+The config maps _A-1_ to 'Inside st' when the active window's class begins with 'st-'.
+
+Use _-v, --verbose_ to find class and title names.
+When running in the background, read output with _tail\ -f\ ~/.config/keyd-rust/app.log_.
+Config changes are loaded when window focus changes.
+On X, GNOME and wlroots, send USR1 to refresh the current window's bindings.
+
+The mapper supports X, KDE, GNOME, wlroots compositors such as Sway, and COSMIC.
+
+# INSTALLATION
+
+Start _keyd-rust-application-mapper -d_ from your desktop session startup,
+such as _~/.xinitrc_ or _~/.xsession_. For GNOME, run the mapper first and follow
+its instructions to install and enable the required extension.
+
+keyd-rust must be running. Your user must have access to
+*/var/run/keyd-rust.socket*, normally through the *keyd-rust* group.
+
+# ENVIRONMENT VARIABLES
+
+*KEYD_DEBUG*
+	Debug log level. _0_,_1_ can be specified (default: 0).
+
+# SECURITY
+
+Grant access to */var/run/keyd-rust.socket* only to trusted users.
+Treat membership in the _keyd-rust_ group as full access to the system.

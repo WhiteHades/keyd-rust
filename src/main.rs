@@ -1,5 +1,5 @@
 // Rust entry point for keyd's compatible command-line interface. See LICENSE.
-use keyd::{cli, daemon, ipc, linux, log, monitor, runtime};
+use keyd_rust::{cli, daemon, ipc, linux, log, monitor, runtime};
 use std::io::{self, IsTerminal, Read, Write};
 #[cfg(not(target_env = "musl"))]
 use std::os::fd::FromRawFd;
@@ -11,8 +11,8 @@ use std::path::Path;
 fn fatal_config(error: &io::Error) -> bool {
     error
         .get_ref()
-        .and_then(|error| error.downcast_ref::<keyd::config::ParseError>())
-        .is_some_and(keyd::config::ParseError::is_fatal)
+        .and_then(|error| error.downcast_ref::<keyd_rust::config::ParseError>())
+        .is_some_and(keyd_rust::config::ParseError::is_fatal)
 }
 
 #[cfg(target_env = "musl")]
@@ -88,7 +88,7 @@ impl<W: Write> Write for CheckOutput<'_, W> {
 }
 
 fn listen(stdout: &mut impl Write) -> io::Result<i32> {
-    let stream = cli::listen_connect(Path::new(keyd::SOCKET_PATH))?;
+    let stream = cli::listen_connect(Path::new(keyd_rust::SOCKET_PATH))?;
     let mut connection = runtime::FdIo::new(stream.as_fd())?;
     let mut buffer = [0; 512];
     loop {
@@ -127,7 +127,7 @@ fn run() -> io::Result<i32> {
     let Some(command) = command else {
         return daemon::run();
     };
-    let socket = Path::new(keyd::SOCKET_PATH);
+    let socket = Path::new(keyd_rust::SOCKET_PATH);
     let arguments = &args[1..];
     if command == cli::Command::Monitor {
         if runtime::original_stdout_closed() && !(arguments.len() == 1 && arguments[0] == "-h") {
@@ -172,7 +172,7 @@ fn run() -> io::Result<i32> {
             )?;
             let result = cli::check(
                 arguments,
-                Path::new(keyd::CONFIG_DIR),
+                Path::new(keyd_rust::CONFIG_DIR),
                 &mut output,
                 &mut stderr,
             );

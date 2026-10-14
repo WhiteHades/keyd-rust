@@ -272,10 +272,10 @@ pub fn run() -> io::Result<i32> {
     }
     let home = std::env::var_os("HOME")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME not set"))?;
-    let directory = PathBuf::from(home).join(".config/keyd");
+    let directory = PathBuf::from(home).join(".config/keyd-rust");
     let path = directory.join("app.conf");
     if !path.exists() {
-        return die("could not find app.conf, make sure it is in ~/.config/keyd/app.conf");
+        return die("could not find app.conf, make sure it is in ~/.config/keyd-rust/app.conf");
     }
     let config = config::Config::load(&path)?;
     let _lock = match lock(&directory.join("app.lock")) {
@@ -291,7 +291,7 @@ pub fn run() -> io::Result<i32> {
         path,
         verbose,
         debug: std::env::var_os("KEYD_DEBUG").is_some_and(|value| !value.is_empty()),
-        keyd: std::env::var_os("KEYD_BIN").unwrap_or_else(|| "keyd".into()),
+        keyd: std::env::var_os("KEYD_BIN").unwrap_or_else(|| "keyd-rust".into()),
     };
     let mut monitor = if let Ok(mut monitor) = kde::Monitor::connect() {
         output(format_args!("kde detected"))?;
@@ -374,7 +374,7 @@ pub fn run() -> io::Result<i32> {
 
 fn help() -> io::Result<i32> {
     output(format_args!(
-        "usage: keyd-application-mapper [-h] [-v] [-d]\n\noptions:\n  -h, --help       show this help message and exit\n  -v, --verbose    Log the active window (useful for discovering window and\n                   class names)\n  -d, --daemonize  fork and run in the background"
+        "usage: keyd-rust-application-mapper [-h] [-v] [-d]\n\noptions:\n  -h, --help       show this help message and exit\n  -v, --verbose    Log the active window (useful for discovering window and\n                   class names)\n  -d, --daemonize  fork and run in the background"
     ))?;
     Ok(0)
 }
@@ -383,7 +383,7 @@ fn argument_error(message: &str) -> io::Result<i32> {
     let stderr = io::stderr();
     writeln!(
         runtime::FdIo::new(stderr.as_fd())?,
-        "usage: keyd-application-mapper [-h] [-v] [-d]\nkeyd-application-mapper: error: {message}"
+        "usage: keyd-rust-application-mapper [-h] [-v] [-d]\nkeyd-rust-application-mapper: error: {message}"
     )?;
     Ok(2)
 }

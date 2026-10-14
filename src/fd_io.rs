@@ -26,20 +26,12 @@ pub struct FdIo<'fd> {
 impl<'fd> FdIo<'fd> {
     pub fn new(fd: BorrowedFd<'fd>) -> io::Result<Self> {
         // SAFETY: F_GETFL/F_SETFL use scalar arguments; fd stays borrowed and open.
-        let flags = syscall_result(unsafe {
-            syscall6(FCNTL, [fd.as_raw_fd() as usize, 3, 0, 0, 0, 0])
-        })?;
+        let flags =
+            syscall_result(unsafe { syscall6(FCNTL, [fd.as_raw_fd() as usize, 3, 0, 0, 0, 0]) })?;
         syscall_result(unsafe {
             syscall6(
                 FCNTL,
-                [
-                    fd.as_raw_fd() as usize,
-                    4,
-                    flags | os::O_NONBLOCK,
-                    0,
-                    0,
-                    0,
-                ],
+                [fd.as_raw_fd() as usize, 4, flags | os::O_NONBLOCK, 0, 0, 0],
             )
         })?;
         Ok(Self {
@@ -113,9 +105,7 @@ impl Read for FdIo<'_> {
             }
             self.check_deadline()?;
             match os::read(self.fd, bytes) {
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    self.wait(os::POLLIN)?
-                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => self.wait(os::POLLIN)?,
                 Err(error)
                     if error.kind() == io::ErrorKind::Interrupted && shutdown_signal() == 0 =>
                 {

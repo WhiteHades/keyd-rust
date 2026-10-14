@@ -1,0 +1,9 @@
+[Unit]
+Description=keyd-rust key remapping daemon
+
+[Service]
+Type=simple
+ExecStart=@PREFIX@/bin/keyd-rust
+
+[Install]
+WantedBy=multi-user.target

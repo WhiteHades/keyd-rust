@@ -81,9 +81,9 @@ fn main() {
         ),
     );
     let prefix = setting("KEYD_PREFIX", "/usr/local");
-    setting("KEYD_CONFIG_DIR", "/etc/keyd");
-    setting("KEYD_SOCKET_PATH", "/var/run/keyd.socket");
-    setting("KEYD_DATA_DIR", &format!("{prefix}/share/keyd"));
+    setting("KEYD_CONFIG_DIR", "/etc/keyd-rust");
+    setting("KEYD_SOCKET_PATH", "/var/run/keyd-rust.socket");
+    setting("KEYD_DATA_DIR", &format!("{prefix}/share/keyd-rust"));
     let backend = setting("KEYD_VKBD", "uinput");
     assert!(
         matches!(backend.as_str(), "uinput" | "usb-gadget" | "stdout"),

@@ -1,0 +1,916 @@
+keyd-rust(1)
+
+# NAME
+
+*keyd-rust* - A key remapping daemon.
+
+# SYNOPSIS
+
+*keyd-rust* [command] [options]
+
+# COMMANDS
+
+*monitor [-t]*
+	Print key events, key names and device ids. With -t, also print the time since the last event in milliseconds.
+
+*listen*
+	Print layer state changes from the running keyd-rust daemon to stdout.
+
+*bind reset|<binding> [<binding>...]*
+	Apply the supplied bindings. See _Bindings_ for details.
+
+*reload*
+	Reload config files.
+
+*list-keys*
+	List valid key names.
+
+*input [-t <timeout>] <text> [<text>...]*
+	Input the supplied text. If no arguments are given, read the input from STDIN.
+	The optional timeout sets the time between emitted events in microseconds.
+
+*do [-t <timeout>] [<exp>]*
+	Execute <exp>, or read it from STDIN if omitted. See _MACROS_ for its format.
+	The optional timeout overrides macro_sequence_timeout.
+
+*check [<config file>...]*
+	Validate the supplied config files, or all files in the config directory if none are supplied.
+	Exit with a nonzero status if any file fails validation.
+
+# OPTIONS
+
+*-v, --version*
+	Print the current version and exit.
+
+*-h, --help*
+	Print help and exit.
+
+# DESCRIPTION
+
+keyd-rust remaps keys using layers, oneshot modifiers and macros.
+Mappings work across Wayland, X and the console.
+Run one instance through your service manager. The daemon runs in the foreground
+and writes diagnostic output to the standard output streams.
+
+*NOTE:*
+
+A bad config can make your keyboard unusable.
+Press *<backspace>+<escape>+<enter>* to terminate keyd-rust.
+
+# CONFIGURATION
+
+Config files contain _[section_name]_ headers followed by _bindings_.
+Lines beginning with a hash are ignored.
+
+Config files are stored in _/etc/keyd-rust/_ and loaded at startup.
+Run _sudo keyd-rust reload_ to load changes.
+Installed data is stored in _PREFIX/share/keyd-rust/_, where PREFIX defaults to
+_/usr/local_. Adjust the data paths below if you install with a different prefix.
+
+A valid config file has the extension _.conf_ and *must* begin with an _[ids]_
+section that has one of the following forms:
+
+```
+	[ids]
+
+	<id 1 (obtained via keyd-rust monitor)>
+	<id 2>
+	...
+```
+
+or
+
+```
+	[ids]
+
+	*
+	-<id 1>
+	-<id 2>
+	...
+```
+
+The first form matches the listed ids. The second matches ids that are not excluded.
+
+For example:
+
+```
+	[ids]
+	*
+	-0123:4567
+```
+
+
+The config matches keyboards without the id _0123:4567_. The following config
+matches only devices with that id:
+
+```
+	[ids]
+
+	0123:4567
+```
+
+Use _keyd-rust monitor_ to find device ids. List each id in only one config file.
+
+Each later section defines a _layer_, except _[global]_ and _[aliases]_.
+See _GLOBALS_ and _Aliases_.
+
+Read config errors in the service log with _sudo journalctl -eu keyd-rust_.
+
+Prefix an id with k: to match only keyboards or m: to match only mice.
+For example, m:046d:b01d matches a mouse.
+
+Keyboards in the same config share state, so a foot pedal can affect another keyboard.
+
+The wildcard matches only devices identified as keyboards.
+List mouse ids explicitly to manage mice, such as clearing oneshot modifiers on click.
+
+*Mouse support is experimental.* Adding a mouse to [ids] may break your pointer.
+Exclude a mouse from the wildcard if keyd-rust mistakes it for a keyboard.
+
+## Layers
+
+A layer contains _bindings_ that define what each key does.
+Later activated layers take precedence over earlier ones.
+Put common bindings in the default layer, _main_.
+
+The following config activates _nav_ while capslock is held:
+
+```
+	[main]
+
+	capslock = layer(nav)
+
+	[nav]
+
+	h = left
+	k = up
+	j = down
+	l = right
+```
+
+While capslock is held, _hjkl_ produce the corresponding arrow keys.
+
+A layer name may end with ':' and modifiers to apply to keys without an explicit binding.
+Layer names can contain at most 64 characters, including modifiers.
+
+For example:
+
+```
+	[main]
+
+	capslock = layer(capslock)
+
+	[capslock:C]
+
+	j = down
+```
+
+Capslock acts as control, except _capslock+j_ emits _down_.
+
+Bindings ignore their own layer's modifiers.
+*capslock+j* produces *down*, while *shift+capslock+j* produces *shift+down*.
+
+
+Layer headings have the following form:
+
+```
+	"[" <layer name>[:<modifier set>] "]"
+```
+
+_<modifier_set>_ has the form:
+
+	_<modifier1>[-<modifier2>]..._
+
+The modifiers are:
+
+	*C* - Control++
+*M* - Meta/Super++
+*A* - Alt++
+*S* - Shift++
+*G* - AltGr
+
+Bindings after each heading have the form:
+
+	<key> | <alias> = <key>|<macro>|<action>
+
+See _ACTIONS_ and _MACROS_ for <action> and <macro>.
+
+In main, keys map to themselves by default.
+Modifier keys instead activate layers with the same names and modifiers.
+
+For example, _meta_ is bound to _layer(meta)_, defined as _meta:M_.
+
+The default modifier bindings are:
+
+```
+	control = layer(control)
+	meta = layer(meta)
+	shift = layer(shift)
+	leftalt = layer(alt)
+	rightalt = layer(altgr)
+```
+
+To change a modifier's bindings, add them to its existing layer.
+
+For example:
+
+```
+	[ids]
+	*
+
+	[control]
+	j = down
+```
+
+The config maps control+j to down. Internally, the config is equivalent to:
+
+```
+	[ids]
+	*
+
+	[main]
+	leftcontrol = layer(control)
+	rightcontrol = layer(control)
+
+	[control:C]
+	j = down
+```
+
+The last binding for a key takes precedence.
+
+Repeated layer headings combine their bindings. They cannot change the layer type.
+
+For example:
+
+```
+[mylayer:A]
+a = b
+c = d
+
+[mylayer:C]
+a = x
+b = c
+```
+
+The config is equivalent to:
+
+```
+[mylayer:A]
+a = x
+b = c
+c = d
+```
+
+## Composite layers
+
+A *composite layer* joins existing layer names with _+_.
+It takes precedence when all named layers are active.
+Composite layers cannot have modifiers or be activated directly.
+
+For example:
+
+```
+	[control+alt]
+	h = left
+```
+
+The sequence _control+alt+h_ produces _left_ without control or alt.
+_control+alt+f1_ keeps both modifiers because the composite layer has no binding for _f1_.
+
+
+```
+	[main]
+	capslock = layer(capslock)
+
+	[capslock:C]
+
+	[capslock+shift]
+	h = left
+```
+
+The sequence _capslock+shift+h_ produces _left_. Capslock and shift still work separately.
+
+Define composite layers _after_ their component layers.
+
+Use the following order:
+
+```
+[layer1]
+[layer2]
+[layer1+layer2]
+```
+
+Do not use:
+
+```
+[layer1+layer2]
+[layer1]
+[layer2]
+```
+
+## Layouts
+
+A layout remaps letter keys. Layouts cannot have modifiers, and only one can be active.
+The default layout is 'main'. Change it with _setlayout()_.
+
+Installed layouts are in _PREFIX/share/keyd-rust/layouts_. Read them before including them.
+Layouts for languages other than English include a shift layer, so inclusion order matters.
+They also require the compose definitions described in _Unicode support_.
+
+For example:
+
+```
+# Include the shipped colemak layout.
+include layouts/colemak
+
+[global]
+default_layout = mylayout
+
+[mylayout:layout]
+a = b
+b = c
+#etc...
+
+[control]
+1 = setlayout(customlayout)
+2 = setlayout(colemak)
+```
+
+
+## Chording
+
+_Chords_ bind several keys to one action. Join key names with + on the left side.
+The action runs if all keys are pressed within _chord_timeout_.
+
+For example:
+
+```
+j+k = esc
+```
+
+Pressing _j_ and _k_ together produces _esc_.
+
+Adjust the default 50ms interval if needed for your keyboard.
+
+## Unicode support
+
+Unicode values become macros that emit the installed compose sequences.
+The compose file is _PREFIX/share/keyd-rust/keyd-rust.compose_.
+Copy it to the appropriate location in _/usr/share/X11/locale_ for system use,
+or link it to _~/.XCompose_ for your user account.
+
+For example:
+
+	ln -s /usr/local/share/keyd-rust/keyd-rust.compose ~/.XCompose
+
+Use the default US layout in your display server.
+Set other layouts in keyd-rust, as described in _Layouts_, to avoid Unicode conflicts.
+
+Restart applications if they do not load the compose file.
+
+Modifiers affect compose sequences. To produce a different symbol with shift,
+define a shift layer, as shown in the installed layouts.
+
+Some GTK4 versions can crash with large XCompose files such as keyd-rust.compose.
+
+## Aliases
+
+An *alias* names a key for use on the left side of a binding.
+Several keys can share an alias, but each key can have only one alias.
+
+By default, *meta* names both 'leftmeta' and 'rightmeta'.
+The binding 'meta = a' is equivalent to 'leftmeta = a' and 'rightmeta = a'.
+
+Define aliases in [aliases] with the form:
+
+	<key> = <name>
+
+_<key>_ must be a valid key name.
+
+If <name> is a key name, references to that name use the new key.
+The key also gets the named keycode by default.
+Use aliases before shared bindings to account for different keyboard layouts.
+
+For example:
+
+```
+/etc/keyd-rust/common:
+	meta = oneshot(meta)
+	alt = oneshot(alt)
+
+	a = a
+	s = o
+	# etc..
+
+/etc/keyd-rust/default.conf:
+	[ids]
+	*
+
+	[main]
+	include common
+
+/etc/keyd-rust/magic_keyboard.conf:
+	[ids]
+	004c:0267
+
+	[aliases]
+	leftalt = meta
+	rightalt = meta
+	rightmeta = alt
+	leftmeta = alt
+
+	[main]
+	include common
+```
+
+The config shares bindings from /etc/keyd-rust/common while swapping the meta and alt keys.
+
+## File inclusion
+
+Use *include <file>* after [ids] to insert a file's contents at that point.
+Included files can share bindings between configs.
+
+Include paths are relative to the following directories:
+
+	- /etc/keyd-rust/
+	- PREFIX/share/keyd-rust/
+
+For example:
+
+```
+/etc/keyd-rust/default.conf:
+	[ids]
+	*
+
+	# Add our shared custom bindings.
+	include common
+
+	# Appends bindings to the main layer
+	# defined in /etc/keyd-rust/common (order matters)
+	[main]
+	capslock = layer(capslock)
+
+	[capslock]
+	1 = setlayout(colemak)
+	2 = setlayout(dvorak)
+
+/etc/keyd-rust/common:
+	[main]
+
+	rightmeta = layer(nav)
+
+	[nav]
+
+	h = left
+	j = down
+	k = up
+	l = right
+
+/usr/local/share/keyd-rust/layouts/dvorak:
+	a = a
+	s = o
+	...
+
+```
+
+Limitations:
+
+	- Include statements should appear after [ids].
+	- Included files should not contain an ids section.
+	- Included files should not include other files.
+	- Included files should not end in .conf.
+
+
+# GLOBALS
+
+Set global options in _[global]_.
+
+	*macro_timeout:* Milliseconds before a macro's first repetition.
+	(default: 600)
+
+	*macro_repeat_timeout:* Milliseconds between macro repetitions.
+	(default: 50)
+
+	*layer_indicator:* Turn on the capslock light when a layer is active.
+	Some Wayland compositors override the light state, preventing use of this option.
+
+	(default: 0)
+
+	*macro_sequence_timeout:* Microseconds between emitted keys in a macro.
+	Increase it if a system loses events because its input buffer fills up.
+
+	*chord_timeout:* Maximum milliseconds between keys in a chord.
+	(default: 50)
+
+	*chord_hold_timeout:* Milliseconds a chord must be held before activation.
+	(default: 0)
+
+	*oneshot_timeout:* Milliseconds before a oneshot layer expires. Zero disables expiry.
+	(default: 0)
+
+	*disable_modifier_guard:* Disable the extra control keypresses that
+	prevent programs from treating modifier taps as commands, such as alt in Firefox.
+	(default: 0)
+
+	*overload_tap_timeout:* If nonzero, ignore the tap action of an
+	overloaded key held for the given number of milliseconds.
+	(default: 0).
+
+
+Macro timeouts also affect Unicode characters and key sequences.
+
+# MACROS
+
+Actions can accept macro expressions.
+
+A macro expression has one of the following forms:
+
+	. macro(<exp>)
+	. [<modifier 1>[-<modifier 2>...]-<key>
+	. <char>
+
+_<char>_ is a valid Unicode character. _<exp>_ has the form _<token1> [<token2>...]_.
+Each token is one of:
+
+	- A valid key code.
+	- A type 2 macro.
+	- A string of Unicode characters.
+	- Key codes joined with + to press together.
+	- A timeout of the form _<time>ms_ (where _<time>_ < 1024).
+
+The following are all valid macro expressions:
+
+	- C-a
+	- macro(C-a)
+	- macro(leftcontrol+leftmeta) # simultaneously taps the left meta and left control keys
+	- A-M-x
+	- macro(Hello space World)
+	- macro(h e l l o space w o r ld) (identical to the above)
+	- macro(C-t 100ms google.com enter)
+
+Split tokens to write literal text. _macro(space)_
+inserts a space but _macro(s pace)_ writes "space". Likewise, _macro(3+5)_
+depresses the 3 and 5 keys as a unit while _macro(3 + 5)_ writes "3+5".
+
+For characters outside ASCII, see _Unicode support_.
+
+# ACTIONS
+
+An _action_ accepts zero or more arguments.
+
+*layer(<layer>)*
+	Activate the given layer for the duration of the keypress.
+
+*oneshot(<layer>)*
+
+	If tapped, activate the supplied layer for the duration of the next keypress.
+
+*swap(<layer>)*
+	Replace the active layer with the supplied layer.
+	If the active layer is toggled, toggle the new layer instead.
+	Otherwise, keep the new layer active while the activating key is held.
+	Behavior is undefined for composite layers.
+
+```
+	[control]
+
+	x = swap(xlayer)
+
+	[xlayer]
+
+	s = C-s
+	b = S-insert
+```
+
+	NOTE:
+
+	Use swap carefully. It can leave layers active with no way to deactivate them.
+
+*setlayout(<layout>)*
+	Set the current layout.
+
+*clear()*
+	Clear any toggled or oneshot layers.
+
+*toggle(<layer>)*
+	Permanently toggle the state of the given layer.
+
+*layerm(<layer>, <macro>)*
+	Identical to *layer*, but executes the supplied macro before the layer change.
+
+*oneshotm(<layer>, <macro>)*
+	Identical to *oneshot*, but executes the supplied macro before the layer change.
+
+*oneshotk(<layer>, <key>)*
+	Act as *oneshot* when tapped and as the supplied key while held.
+
+*swapm(<layer>, <macro>)*
+	Identical to *swap*, but accepts a macro to be executed immediately
+	after the layer change.
+
+*togglem(<layer>, <macro>)*
+	Execute the supplied macro, then toggle the layer.
+
+*clearm(<macro>)*
+	Identical to *clear*, but executes the supplied macro before clearing layers.
+
+*repeat()*
+	Repeat the last key or macro sequence.
+
+## Key overloading
+
+*overload(<layer>, <action>)*
+	Activates the given layer while held and executes <action> on tap.
+
+*overloadd(<layer>, <tap>, <double tap>, <timeout>)*
+	Activates the layer immediately while held. A single tap emits <tap>
+	after <timeout> milliseconds. Two taps emit only <double tap> when the
+	second press occurs before the first release's deadline. The second
+	press then has its own <timeout> milliseconds to finish. Enter is emitted
+	on the second release, so the second press can still become a hold.
+
+	Both tap actions must be key sequences, such as semicolon, enter or
+	C-enter. The timeout must be 1 to 65535 milliseconds. An intervening
+	key or modifier event emits pending punctuation before processing that
+	event. Another key pressed while the layer is held suppresses that
+	hold's tap action. The overload_tap_timeout setting still applies.
+	A lone hold without another key emits the single action on release,
+	unless overload_tap_timeout excludes it.
+
+	For example:
+
+```
+	[main]
+	semicolon = overloadd(nav, semicolon, enter, 200)
+	[nav]
+	h = left
+```
+
+*overloadt(<layer>, <action>, <timeout>)*
+	Act as overload, but activate the layer only after \<timeout\> milliseconds.
+	Overlapping keys wait until the timeout expires or the bound key is released,
+	which delays typed output.
+
+*overloadt2(<layer>, <action>, <timeout>)*
+	Act as overloadt, but also treat an intervening key tap as a hold.
+
+*overloadi(<action 1>, <action 2>, <idle timeout>)*
+	Activate <action 1> if the last symbol key was struck less
+	than <timeout> milliseconds ago, otherwise activate <action 2>.
+
+	Combine it with other overload actions to use letter keys as modifiers.
+
+	For example:
+
+```
+	a = overloadi(a, overloadt2(control, a, 200), 150)
+```
+
+	The binding produces _a_ in either case:
+
+		- _a_ is struck within 150ms of another symbol key.
+		- _a_ is struck more than 150ms after the last symbol key but held for less than 200ms
+		  and there are no intervening key taps.
+
+	Within a word, the key immediately produces a letter.
+	When held after a pause, it activates the layer.
+	The *lettermod* action below provides the same combination.
+
+*lettermod(<layer>, <key>, <idle timeout>, <hold timeout>)*
+	An alias for:
+
+		*overloadi(<key>, overloadt2(<layer>, <key>, <hold timeout>), <idle timeout>)*
+
+*timeout(<action 1>, <timeout>, <action 2>)*
+	A key event before _<timeout> ms_ selects <action 1>.
+	Expiry selects <action 2>.
+
+	E.g.
+
+	timeout(a, 500, layer(control))
+
+	The key acts as control after being held for 500 ms without another keypress.
+
+	Use the overload actions for ordinary tap and hold bindings.
+	The timeout action is intended for combinations that need different timing.
+
+*macro2(<timeout>, <repeat timeout>, <macro>)*
+	Creates a macro with the given timeout and repeat timeout. If a timeout value of 0 is used,
+	macro repeat is disabled.
+
+	Note that <macro> must be a valid macro expression.
+
+	E.g.
+```
+	macro2(400, 50, macro(Hello space World))
+	macro2(120, 80, left)
+```
+*command(<shell command>)*
+	Execute the given shell command.
+
+	E.g.
+
+	command(brightness down)
+
+*NOTE:* Commands run as the user running keyd-rust, usually root.
+Only use commands you trust.
+
+*noop*
+	Do nothing.
+
+# IPC
+
+Use _keyd-rust bind_ to change bindings while the daemon runs.
+The *keyd-rust-application-mapper(1)* helper uses the same interface when window focus changes.
+
+The socket is _/var/run/keyd-rust.socket_. Grant access only to trusted users.
+Treat membership in the _keyd-rust_ group as full access to the system.
+
+## Bindings
+
+The _bind_ command accepts bindings in the form:
+
+	\[<layer>.\]<key> = <key>|<macro>|<action>
+
+_<layer>_ names an existing layer.
+
+The argument "reset" removes dynamic bindings and restores the original keymap.
+
+Examples:
+
+```
+	$ keyd-rust bind '- = C-c'
+	$ keyd-rust bind reset '+ = C-c' # Reset the keyboard before applying the '+' binding (drops the previous '-' binding)
+```
+
+Expressions apply to all loaded configurations.
+
+# EXAMPLES
+
+## Example 1
+
+Make _esc+q_ toggle the dvorak letter layout.
+
+```
+	[ids]
+	*
+
+	[main]
+	esc = layer(esc)
+
+	[dvorak]
+
+	a = a
+	s = o
+	...
+
+	[esc]
+
+	q = toggle(dvorak)
+```
+
+## Example 2
+
+Invert the behaviour of the shift key without breaking modifier behaviour.
+
+```
+	[ids]
+	*
+
+	[main]
+	1 = !
+	2 = @
+	3 = #
+	4 = $
+	5 = %
+	6 = ^
+	7 = &
+	8 = *
+	9 = (
+	0 = )
+
+	[shift]
+	0 = 0
+	1 = 1
+	2 = 2
+	3 = 3
+	4 = 4
+	5 = 5
+	6 = 6
+	7 = 7
+	8 = 8
+	9 = 9
+```
+
+## Example 3
+
+Tap control once to apply it to the next key. Tap twice to keep it active until
+the next press. Hold it to use control normally.
+
+```
+	[main]
+
+	control = oneshot(control)
+
+	[control]
+
+	control = toggle(control)
+```
+
+## Example 4
+
+Press \` while holding leftmeta to activate alt_tab until leftmeta is released.
+Further presses produce _A-tab_ instead of _M-\\_.
+
+```
+	[meta]
+
+	` = swapm(alt_tab, A-tab)
+
+	[alt_tab:A]
+
+	tab = A-S-tab
+	` = A-tab
+```
+
+## Example 5
+
+```
+	# Uses the compose key functionality of the display server to generate
+	# international glyphs.  # For this to work 'setxkbmap -option  compose:menu'
+	# must be run after keyd-rust has started (see NOTES).
+
+	# A list of sequences can be found in /usr/share/X11/locale/en_US.UTF-8/Compose
+	# on most systems.
+
+
+	[main]
+
+	rightalt = layer(dia)
+
+	[dia]
+
+	# Map o to ö
+	o = macro(compose o ")
+
+	# Map e to €
+	e = macro(compose c =)
+```
+
+## Example 6
+
+```
+	# Tapping both shift keys will activate capslock.
+
+	[shift]
+
+	leftshift = capslock
+	rightshift = capslock
+```
+
+## Example 7
+
+Hold capslock for control, or combine it with 'h/j/k/l' for arrow keys.
+Tap it for escape.
+
+```
+	[main]
+	capslock = overload(capslock, esc)
+	esc = capslock
+
+	[capslock:C]
+	h = left
+	k = up
+	j = down
+	l = right
+```
+
+## Example 8
+
+The config disables esc and end.
+
+```
+	[main]
+	esc = noop
+	end = noop
+```
+
+# NOTES
+
+Restarting keyd-rust creates a new virtual input device.
+Reapply settings from _setxkbmap_ or _xset_ if they are lost.
+
+# ENVIRONMENT VARIABLES
+
+*KEYD_DEBUG*
+	Debug log level. _0_,_1_,_2_ can be specified (default: 0).
+
+# AUTHOR
+
+Written by Raheman Vaiya (2017-).
+
+# BUGS
+
+File bugs or feature requests at:
+
+<https://github.com/WhiteHades/keyd-rust/issues>
