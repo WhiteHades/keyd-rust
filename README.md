@@ -120,7 +120,7 @@ and Unicode setup. More examples are in [examples](examples/) and the
 | Comparison | Original keyd | keyd-rust |
 | --- | --- | --- |
 | Implementation | C daemon, some Python tools | Rust, no C engine or bridge |
-| Double-tap action | No `overloadd` | Tap, double tap, immediate held layer; configurable timing |
+| Double tap action | No `overloadd` | Tap, double tap, immediate held layer; configurable timing |
 | Device removal | Keeps removed-device descriptors | Closes them |
 
 Linux kernel checks passed on x86_64, i686 and ARM64, including x86_64 musl.
