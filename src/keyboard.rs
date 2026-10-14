@@ -50,6 +50,27 @@ struct CacheEntry {
     descriptor: Descriptor,
     descriptor_layer: usize,
     layer: usize,
+    tap: Option<TapPress>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingTap {
+    code: u8,
+    descriptor: Descriptor,
+    layer: usize,
+    single: Descriptor,
+    mods: u8,
+    expiration: i64,
+}
+
+#[derive(Clone, Copy)]
+struct TapPress {
+    start: i64,
+    interrupted: bool,
+    single: Descriptor,
+    double: Descriptor,
+    window: i64,
+    first: Option<PendingTap>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -126,12 +147,14 @@ pub struct Keyboard<O: Output> {
     macro_repeat_interval: i64,
     overload_start_time: i64,
     last_simple_key_time: i64,
+    last_event_time: i64,
     timeouts: [i64; 128],
     nr_timeouts: usize,
     active_chords: [ActiveChord; CHORD_SLOTS],
     chord: PendingChord,
     pending_timeout: PendingTimeout,
     pending_overload: PendingOverload,
+    pending_tap: Option<PendingTap>,
     pub layer_state: [LayerState; MAX_LAYERS],
     last_repeatable_action: Descriptor,
     pub keystate: [u8; 256],
@@ -192,12 +215,14 @@ impl<O: Output> Keyboard<O> {
             macro_repeat_interval: 0,
             overload_start_time: 0,
             last_simple_key_time: 0,
+            last_event_time: 0,
             timeouts: [0; 128],
             nr_timeouts: 0,
             active_chords: [ActiveChord::default(); CHORD_SLOTS],
             chord: PendingChord::default(),
             pending_timeout: PendingTimeout::default(),
             pending_overload: PendingOverload::default(),
+            pending_tap: None,
             layer_state,
             last_repeatable_action: Descriptor::default(),
             keystate: [0; 256],
@@ -263,7 +288,7 @@ impl<O: Output> Keyboard<O> {
         }
     }
 
-    fn update_mods(&mut self, excluded: Option<usize>, mut mods: u8) -> u8 {
+    fn active_mods(&self, excluded: Option<usize>, mut mods: u8) -> u8 {
         for (i, layer) in self.config.layers.iter().enumerate() {
             if self.layer_state[i].active == 0 {
                 continue;
@@ -277,6 +302,10 @@ impl<O: Output> Keyboard<O> {
                 mods |= layer.mods;
             }
         }
+        mods
+    }
+
+    fn set_mods(&mut self, mods: u8) {
         for modifier in MODIFIERS {
             if mods & modifier.mask != 0 {
                 if self.keystate[modifier.key as usize] == 0 {
@@ -286,7 +315,82 @@ impl<O: Output> Keyboard<O> {
                 self.clear_mod(modifier.key);
             }
         }
+    }
+
+    fn update_mods(&mut self, excluded: Option<usize>, mods: u8) -> u8 {
+        let mods = self.active_mods(excluded, mods);
+        self.set_mods(mods);
         mods
+    }
+
+    fn emit_tap(&mut self, action: Descriptor, mods: u8, time: i64) {
+        let code = action.args[0] as u8;
+        let mods = mods | action.args[1] as u8;
+        self.set_mods(mods);
+        self.send_key(code, 0);
+        self.send_key(code, 1);
+        self.send_key(code, 0);
+        self.last_repeatable_action = action;
+        self.last_repeatable_action.args[1] = mods as u16;
+        self.clear_oneshot();
+        self.update_mods(None, 0);
+        if mods == 0 || mods == MOD_SHIFT {
+            self.last_simple_key_time = time;
+        }
+    }
+
+    fn resolve_taps(&mut self, code: u8, pressed: bool, time: i64, flush: bool) {
+        if self
+            .pending_tap
+            .is_some_and(|tap| flush || time >= tap.expiration || (code != 0 && code != tap.code))
+        {
+            let tap = self.pending_tap.take().unwrap();
+            self.emit_tap(tap.single, tap.mods, time);
+        }
+        for slot in 0..self.cache.len() {
+            let entry = &mut self.cache[slot];
+            if let Some(tap) = &mut entry.tap {
+                if code != 0 && code != entry.code && pressed {
+                    tap.interrupted = true;
+                }
+                if tap.first.is_some_and(|first| {
+                    flush || time >= first.expiration || (code != 0 && code != entry.code)
+                }) {
+                    let first = tap.first.take().unwrap();
+                    self.emit_tap(first.single, first.mods, time);
+                }
+            }
+        }
+    }
+
+    fn finish_tap(&mut self, code: u8, entry: CacheEntry, time: i64) {
+        let tap = entry.tap.unwrap();
+        self.deactivate_layer(entry.layer);
+        self.update_mods(None, 0);
+        let mods = self.active_mods(Some(entry.descriptor_layer), 0);
+        let valid = !tap.interrupted
+            && (self.config.overload_tap_timeout == 0
+                || time - tap.start < self.config.overload_tap_timeout);
+        if let Some(first) = tap.first {
+            if valid && time - tap.start < tap.window {
+                self.emit_tap(tap.double, mods, time);
+            } else {
+                self.emit_tap(first.single, first.mods, time);
+            }
+        } else if valid {
+            if time - tap.start < tap.window {
+                self.pending_tap = Some(PendingTap {
+                    code,
+                    descriptor: entry.descriptor,
+                    layer: entry.descriptor_layer,
+                    single: tap.single,
+                    mods,
+                    expiration: time + tap.window,
+                });
+            } else {
+                self.emit_tap(tap.single, mods, time);
+            }
+        }
     }
 
     fn execute_macro(&mut self, layer: usize, index: usize) -> i64 {
@@ -480,6 +584,21 @@ impl<O: Output> Keyboard<O> {
             }
         }
         self.nr_timeouts = n;
+        for deadline in
+            self.pending_tap
+                .iter()
+                .map(|tap| tap.expiration)
+                .chain(self.cache.iter().filter_map(|entry| {
+                    entry
+                        .tap
+                        .and_then(|tap| tap.first)
+                        .map(|tap| tap.expiration)
+                }))
+        {
+            if deadline > time && (timeout == 0 || deadline < timeout) {
+                timeout = deadline;
+            }
+        }
         if timeout == 0 { 0 } else { timeout - time }
     }
 
@@ -625,6 +744,50 @@ impl<O: Output> Keyboard<O> {
                             self.process_descriptor(code, action, layer, true, time);
                             self.process_descriptor(code, action, layer, false, time);
                         }
+                    }
+                }
+            }
+            Op::OverloadDoubleTap => {
+                if pressed {
+                    if self.cache_index(code).is_none()
+                        && !self.cache_set(
+                            code,
+                            CacheEntry {
+                                descriptor: d,
+                                descriptor_layer: layer,
+                                ..CacheEntry::default()
+                            },
+                        )
+                    {
+                        return;
+                    }
+                    let pair = self.auxiliary_descriptor(d.args[1]);
+                    let first = self.pending_tap.take();
+                    let first = first.filter(|tap| {
+                        if tap.descriptor == d && tap.layer == layer {
+                            true
+                        } else {
+                            self.emit_tap(tap.single, tap.mods, time);
+                            false
+                        }
+                    });
+                    if let Some(slot) = self.cache_index(code) {
+                        self.cache[slot].tap = Some(TapPress {
+                            start: time,
+                            interrupted: false,
+                            single: self.auxiliary_descriptor(pair.args[0]),
+                            double: self.auxiliary_descriptor(pair.args[2]),
+                            window: pair.args[1] as i64,
+                            first,
+                        });
+                    }
+                    self.activate_layer(code, index);
+                    self.update_mods(None, 0);
+                } else if let Some(slot) = self.cache_index(code) {
+                    let entry = self.cache[slot];
+                    self.cache[slot] = CacheEntry::default();
+                    if entry.tap.is_some() {
+                        self.finish_tap(code, entry, time);
                     }
                 }
             }
@@ -1073,11 +1236,18 @@ impl<O: Output> Keyboard<O> {
         if self.output.failed() {
             return 0;
         }
+        self.last_event_time = time;
+        self.resolve_taps(code, pressed, time, false);
         if self.handle_chord(code, pressed, time) {
+            self.last_event_time = time;
+            self.resolve_taps(0, false, time, false);
             return self.main_loop_timeout(time);
         }
         self.handle_pending_timeout(code, pressed, time);
+        self.resolve_taps(code, pressed, time, false);
         if self.handle_pending_overload(code, pressed, time) {
+            self.last_event_time = time;
+            self.resolve_taps(0, false, time, false);
             return self.main_loop_timeout(time);
         }
         if self.oneshot_timeout != 0 && time >= self.oneshot_timeout {
@@ -1119,7 +1289,11 @@ impl<O: Output> Keyboard<O> {
                     return self.main_loop_timeout(time);
                 };
                 let entry = self.cache[slot];
-                self.cache[slot].code = 0;
+                self.cache[slot] = CacheEntry::default();
+                if entry.tap.is_some() {
+                    self.finish_tap(code, entry, time);
+                    return self.main_loop_timeout(time);
+                }
                 (descriptor, layer) = (entry.descriptor, entry.descriptor_layer);
             }
             self.process_descriptor(code, descriptor, layer, pressed, time);
@@ -1151,6 +1325,7 @@ impl<O: Output> Keyboard<O> {
 
     pub fn eval(&mut self, expression: impl AsRef<OsStr>) -> Result<(), crate::config::ParseError> {
         let expression = expression.as_ref();
+        self.resolve_taps(0, false, self.last_event_time, true);
         if expression.as_encoded_bytes() == b"reset" {
             self.config.clone_from(&self.original_config);
             Ok(())

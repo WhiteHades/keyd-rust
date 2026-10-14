@@ -61,6 +61,7 @@ pub enum Op {
     ScrollToggleOff,
     ScrollToggle,
     Scroll,
+    OverloadDoubleTap,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -445,6 +446,11 @@ fn action(name: &str) -> Option<(Op, &'static [Arg], Option<&'static str>)> {
         "oneshotk" => (Op::OneShotK, &[Layer, KeySequence], None),
         "layer" => (Op::Layer, &[Layer], None),
         "overload" => (Op::Overload, &[Layer, Descriptor], None),
+        "overloadd" => (
+            Op::OverloadDoubleTap,
+            &[Layer, KeySequence, KeySequence, Timeout],
+            None,
+        ),
         "overloadt" => (Op::OverloadTimeout, &[Layer, Descriptor, Timeout], None),
         "overloadt2" => (Op::OverloadTimeoutTap, &[Layer, Descriptor, Timeout], None),
         "overloadi" => (
@@ -586,10 +592,19 @@ fn parse_descriptor(config: &mut Config, input: &[u8]) -> Result<Descriptor, Par
         .into());
     }
     descriptor.op = op;
+    if op == Op::OverloadDoubleTap
+        && !std::str::from_utf8(args[3])
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .is_some_and(|value| value > 0)
+    {
+        return Err("overloadd timeout must be between 1 and 65535 milliseconds".into());
+    }
+    let mut values = [0; 4];
     // C allocates nested descriptors and macros from the last argument first.
     for index in (0..types.len()).rev() {
         let value = args[index];
-        descriptor.args[index] = match types[index] {
+        values[index] = match types[index] {
             Arg::Layer | Arg::Layout => {
                 let layout = matches!(types[index], Arg::Layout);
                 if !layout && value == b"main" {
@@ -640,6 +655,18 @@ fn parse_descriptor(config: &mut Config, input: &[u8]) -> Result<Descriptor, Par
             }
             Arg::Timeout | Arg::Sensitivity => atoi(value) as u16,
         };
+    }
+    if op == Op::OverloadDoubleTap {
+        if config.descriptors.len() == MAX_DESCRIPTORS {
+            return Err("maximum descriptors exceeded".into());
+        }
+        descriptor.args = [values[0], config.descriptors.len() as u16, 0];
+        config.descriptors.push(Descriptor {
+            op: Op::Timeout,
+            args: [values[1], values[3], values[2]],
+        });
+    } else {
+        descriptor.args.copy_from_slice(&values[..3]);
     }
     Ok(descriptor)
 }

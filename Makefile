@@ -90,3 +90,4 @@ clean:
 test: test-io
 test-io:
 	$(BUILD_ENV) $(CARGO) run --locked --target-dir $(call quote,$(CARGO_TARGET_DIR)) --example keyboard-e2e -- t/test.conf t/*.t
+	$(BUILD_ENV) $(CARGO) run --locked --target-dir $(call quote,$(CARGO_TARGET_DIR)) --example double-tap-e2e -- t/double-tap.conf

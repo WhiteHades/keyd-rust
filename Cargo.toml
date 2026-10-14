@@ -32,3 +32,6 @@ path = "src/bin/keyd-application-mapper.rs"
 name = "dump-xkb-config"
 path = "src/bin/dump-xkb-config.rs"
 
+[[example]]
+name = "double-tap-e2e"
+path = "t/double-tap-e2e.rs"

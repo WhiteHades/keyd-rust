@@ -33,6 +33,11 @@ Use the [configuration and command reference](docs/keyd.scdoc) and
 [example configurations](examples/). The emergency
 `Backspace+Escape+Enter` sequence remains part of the keyboard behavior contract.
 
+The opt-in `overloadd(nav, semicolon, enter, 200)` action supports safe `;;`
+without delaying held navigation. It accepts two key sequences and emits Enter
+on the second release, only before the first tap's 200 ms deadline. A lone tap
+waits for that deadline; an intervening key flushes punctuation first.
+
 ## License
 
 MIT. This project preserves keyd's original attribution and license in

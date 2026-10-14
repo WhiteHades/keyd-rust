@@ -707,6 +707,29 @@ A key may optionally be bound to an _action_ which accepts zero or more argument
 *overload(<layer>, <action>)*
 	Activates the given layer while held and executes <action> on tap.
 
+*overloadd(<layer>, <tap>, <double tap>, <timeout>)*
+	Activates the layer immediately while held. A single tap emits <tap>
+	after <timeout> milliseconds. Two taps emit only <double tap> when the
+	second release occurs before the first release's deadline. Enter is
+	not emitted on the second press, so that press can still become a hold.
+
+	Both tap actions must be key sequences, such as semicolon, enter or
+	C-enter. The timeout must be 1 to 65535 milliseconds. An intervening
+	key or modifier event emits pending punctuation before processing that
+	event. Another key pressed while the layer is held suppresses that
+	hold's tap action. The overload_tap_timeout setting still applies.
+	A lone hold without another key emits the single action on release,
+	unless overload_tap_timeout excludes it.
+
+	This action is specific to keyd-rust. For example:
+
+```
+	[main]
+	semicolon = overloadd(nav, semicolon, enter, 200)
+	[nav]
+	h = left
+```
+
 *overloadt(<layer>, <action>, <timeout>)*
 	Identical to overload, but only activates the layer if the bound key is
 	held for \<timeout\> milliseconds. This is mainly useful for overloading keys
@@ -805,7 +828,7 @@ For instance, the user may use this functionality to write a script which
 alters the keymap when they switch between different tmux sessions.
 
 The application remapping tool (*keyd-application-mapper(1)*) which ships with keyd
-is a good example of this. It is a small python script which performs event
+is a good example of this. It is a native Rust program which performs event
 detection for the various display servers (e.g X/sway/gnome, etc) and feeds the
 desired mappings to the core using _-e_.
 
@@ -1005,4 +1028,4 @@ Written by Raheman Vaiya (2017-).
 
 Please file any bugs or feature requests at the following url:
 
-<https://github.com/rvaiya/keyd/issues>
+<https://github.com/WhiteHades/keyd-rust/issues>
