@@ -20,6 +20,13 @@ pub(crate) mod nr {
     pub const FCNTL: usize = 92;
     pub const OPENAT: usize = 499;
     pub const PPOLL: usize = 545;
+    pub const SIGACTION: usize = 416;
+    pub const SIGPROCMASK: usize = 340;
+    pub const SPECIALFD: usize = 577;
+    pub const CLOCK_GETTIME: usize = 232;
+    pub const NANOSLEEP: usize = 240;
+    pub const KILL: usize = 37;
+    pub const SIGRETURN: usize = 417;
 }
 
 pub(crate) const O_WRONLY: usize = 1;
@@ -169,6 +176,14 @@ pub(crate) const POLLHUP: i16 = 16;
 pub(crate) const POLLNVAL: i16 = 32;
 
 pub(crate) fn poll(fds: &mut [PollFd], timeout_ms: i32) -> io::Result<usize> {
+    poll_masked(fds, timeout_ms, None)
+}
+
+pub(crate) fn poll_masked(
+    fds: &mut [PollFd],
+    timeout_ms: i32,
+    mask: Option<&SignalSet>,
+) -> io::Result<usize> {
     let count = u32::try_from(fds.len()).map_err(|_| io::ErrorKind::InvalidInput)?;
     let timeout = [
         timeout_ms as isize / 1000,
@@ -179,7 +194,7 @@ pub(crate) fn poll(fds: &mut [PollFd], timeout_ms: i32) -> io::Result<usize> {
     } else {
         timeout.as_ptr() as usize
     };
-    // SAFETY: pollfd and timespec have the FreeBSD amd64 ABI and live storage.
+    // SAFETY: pollfd, timespec and optional 16-byte signal mask have live ABI storage.
     // FreeBSD ppoll takes four arguments, without Linux's signal-mask-size word.
     syscall_result(unsafe {
         syscall6(
@@ -188,10 +203,148 @@ pub(crate) fn poll(fds: &mut [PollFd], timeout_ms: i32) -> io::Result<usize> {
                 fds.as_mut_ptr() as usize,
                 count as usize,
                 timeout_ptr,
+                mask.map_or(0, |mask| mask.as_ptr() as usize),
+                0,
+                0,
+            ],
+        )
+    })
+}
+
+pub(crate) type SignalSet = [u32; 4];
+pub(crate) const SIG_BLOCK: i32 = 1;
+pub(crate) const SIG_UNBLOCK: i32 = 2;
+pub(crate) const SIG_SETMASK: i32 = 3;
+pub(crate) const SIGPIPE: i32 = 13;
+pub(crate) const SIGINT: i32 = 2;
+pub(crate) const SIGTERM: i32 = 15;
+pub(crate) const SIGUSR1: i32 = 30;
+pub(crate) const CLOCK_MONOTONIC: usize = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SignalAction {
+    pub handler: usize,
+    pub flags: i32,
+    pub mask: SignalSet,
+    // Explicit tail padding keeps every byte initialized across raw sigaction.
+    pub padding: [u8; 4],
+}
+
+/// # Safety
+/// A supplied handler must be SIG_DFL, SIG_IGN or a permanently live, signal-safe
+/// extern-C callback. Its argument shape must agree with the action flags.
+pub(crate) unsafe fn signal_action(
+    signal: i32,
+    action: Option<&SignalAction>,
+) -> io::Result<SignalAction> {
+    let mut previous = SignalAction::default();
+    // SAFETY: both ABI structures live through the call; the caller owns callback validity.
+    unsafe {
+        syscall_result(syscall6(
+            nr::SIGACTION,
+            [
+                signal as usize,
+                action.map_or(0, |action| action as *const _ as usize),
+                &mut previous as *mut _ as usize,
+                0,
+                0,
+                0,
+            ],
+        ))?;
+    }
+    Ok(previous)
+}
+
+pub(crate) fn signal_mask(how: i32, mask: Option<&SignalSet>) -> io::Result<SignalSet> {
+    let mut previous = [0; 4];
+    // SAFETY: the optional input and initialized output have the 16-byte signal-set ABI.
+    syscall_result(unsafe {
+        syscall6(
+            nr::SIGPROCMASK,
+            [
+                how as usize,
+                mask.map_or(0, |mask| mask.as_ptr() as usize),
+                previous.as_mut_ptr() as usize,
+                0,
+                0,
+                0,
+            ],
+        )
+    })?;
+    Ok(previous)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EventFdRequest {
+    pub initial: u32,
+    pub flags: i32,
+}
+
+pub(crate) fn eventfd(initial: u32) -> io::Result<OwnedFd> {
+    let request = EventFdRequest {
+        initial,
+        flags: (O_CLOEXEC | O_NONBLOCK) as i32,
+    };
+    // SAFETY: SPECIALFD_EVENTFD reads exactly this live eight-byte request.
+    let fd = syscall_result(unsafe {
+        syscall6(
+            nr::SPECIALFD,
+            [
+                1,
+                &request as *const _ as usize,
+                std::mem::size_of_val(&request),
+                0,
+                0,
+                0,
+            ],
+        )
+    })?;
+    // SAFETY: successful __specialfd returns a new uniquely owned descriptor.
+    Ok(unsafe { OwnedFd::from_raw_fd(fd as i32) })
+}
+
+pub(crate) fn monotonic_time() -> io::Result<[isize; 2]> {
+    let mut time = [0; 2];
+    // SAFETY: CLOCK_MONOTONIC writes a live, aligned FreeBSD amd64 timespec.
+    syscall_result(unsafe {
+        syscall6(
+            nr::CLOCK_GETTIME,
+            [CLOCK_MONOTONIC, time.as_mut_ptr() as usize, 0, 0, 0, 0],
+        )
+    })?;
+    Ok(time)
+}
+
+pub(crate) fn nanosleep(
+    request: &[isize; 2],
+    remaining: Option<&mut [isize; 2]>,
+) -> io::Result<()> {
+    // SAFETY: the request and optional output are live aligned native timespecs.
+    syscall_result(unsafe {
+        syscall6(
+            nr::NANOSLEEP,
+            [
+                request.as_ptr() as usize,
+                remaining.map_or(0, |time| time.as_mut_ptr() as usize),
+                0,
                 0,
                 0,
                 0,
             ],
         )
     })
+    .map(|_| ())
+}
+
+pub(crate) fn sleep_us_once(micros: u64) -> io::Result<()> {
+    let micros = u64::from(micros as u32);
+    nanosleep(
+        &[
+            (micros / 1_000_000) as isize,
+            ((micros % 1_000_000) * 1000) as isize,
+        ],
+        None,
+    )
 }
