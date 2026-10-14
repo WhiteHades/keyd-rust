@@ -104,6 +104,8 @@ pub struct ConfigWarning {
     pub line: Option<usize>,
     pub message: OsString,
     pub literal_markup: bool,
+    pub(crate) template: &'static str,
+    pub(crate) arguments: Vec<OsString>,
 }
 
 #[derive(Clone, Debug)]
@@ -194,13 +196,25 @@ impl Default for Config {
     }
 }
 
-fn warn(config: &mut Config, message: impl Into<OsString>) {
-    config.warnings.push(ConfigWarning {
+fn warning(template: &'static str, arguments: &[&[u8]]) -> ConfigWarning {
+    let mut message = Vec::new();
+    crate::log::write_arguments(&mut message, template.as_bytes(), arguments)
+        .expect("fixed warning templates have matching arguments");
+    ConfigWarning {
         path: None,
         line: None,
-        message: message.into(),
+        message: OsString::from_vec(message),
         literal_markup: false,
-    });
+        template,
+        arguments: arguments
+            .iter()
+            .map(|bytes| OsString::from_vec(bytes.to_vec()))
+            .collect(),
+    }
+}
+
+fn warn(config: &mut Config, template: &'static str, arguments: &[&[u8]]) {
+    config.warnings.push(warning(template, arguments));
     config.warning_count += 1;
 }
 
@@ -313,14 +327,8 @@ fn add_layer_inner(config: &mut Config, section: &OsStr) -> Result<(), ParseErro
         } else {
             warn(
                 config,
-                OsString::from_vec(
-                    [
-                        b"\"".as_slice(),
-                        kind,
-                        b"\" is not a valid layer type, ignoring",
-                    ]
-                    .concat(),
-                ),
+                "\"%s\" is not a valid layer type, ignoring",
+                &[kind],
             );
         }
     }
@@ -486,9 +494,8 @@ fn parse_descriptor(config: &mut Config, input: &[u8]) -> Result<Descriptor, Par
             let name = KEYCODE_TABLE[code as usize].name.unwrap_or("UNKNOWN");
             warn(
                 config,
-                format!(
-                    "You should use b{{layer({layer})}} instead of assigning to b{{{name}}} directly."
-                ),
+                "You should use b{layer(%s)} instead of assigning to b{%s} directly.",
+                &[layer.as_bytes(), name.as_bytes()],
             );
             // This markup contains only fixed layer names and the built-in key table.
             config.warnings.last_mut().unwrap().literal_markup = true;
@@ -562,7 +569,8 @@ fn parse_descriptor(config: &mut Config, input: &[u8]) -> Result<Descriptor, Par
     if let Some(preferred) = preferred {
         warn(
             config,
-            format!("{name} is deprecated (renamed to {preferred})."),
+            "%s is deprecated (renamed to %s).",
+            &[name.as_bytes(), preferred.as_bytes()],
         );
     }
     if args.len() != types.len() {
@@ -713,7 +721,7 @@ fn add_entry(config: &mut Config, expression: &[u8]) -> Result<(), ParseError> {
 fn parse_global_section(config: &mut Config, section: &IniSection) {
     for entry in &section.entries {
         let Some(value) = entry.value.as_deref() else {
-            warn(config, "invalid global option");
+            warn(config, "invalid global option", &[]);
             continue;
         };
         let value = value.as_bytes();
@@ -731,9 +739,8 @@ fn parse_global_section(config: &mut Config, section: &IniSection) {
             b"overload_tap_timeout" => config.overload_tap_timeout = number,
             _ => warn(
                 config,
-                OsString::from_vec(
-                    [entry.key.as_bytes(), b" is not a valid global option"].concat(),
-                ),
+                "%s is not a valid global option",
+                &[entry.key.as_bytes()],
             ),
         }
     }
@@ -758,10 +765,7 @@ fn parse_id_section(config: &mut Config, section: &IniSection) -> Result<(), Par
                 ID_KEYBOARD | ID_KEY | ID_MOUSE,
             )
         } else {
-            warn(
-                config,
-                OsString::from_vec([key, b" is not a valid device id"].concat()),
-            );
+            warn(config, "%s is not a valid device id", &[key]);
             continue;
         };
         if config.ids.len() == MAX_IDS {
@@ -777,16 +781,15 @@ fn parse_id_section(config: &mut Config, section: &IniSection) -> Result<(), Par
 fn parse_alias_section(config: &mut Config, section: &IniSection) {
     for entry in &section.entries {
         let Some(name) = entry.value.as_deref() else {
-            warn(config, "invalid alias");
+            warn(config, "invalid alias", &[]);
             continue;
         };
         if let Some(code) = lookup_keycode(entry.key.as_bytes()) {
             if name.len() >= 32 {
                 warn(
                     config,
-                    OsString::from_vec(
-                        [name.as_bytes(), b" exceeds the maximum alias length (31)"].concat(),
-                    ),
+                    "%s exceeds the maximum alias length (%ld)",
+                    &[name.as_bytes(), b"31"],
                 );
             } else {
                 if let Some(alias_code) = lookup_keycode(name.as_bytes()) {
@@ -800,16 +803,8 @@ fn parse_alias_section(config: &mut Config, section: &IniSection) {
         } else {
             warn(
                 config,
-                OsString::from_vec(
-                    [
-                        b"failed to define alias ".as_slice(),
-                        name.as_bytes(),
-                        b", ",
-                        entry.key.as_bytes(),
-                        b" is not a valid keycode",
-                    ]
-                    .concat(),
-                ),
+                "failed to define alias %s, %s is not a valid keycode",
+                &[name.as_bytes(), entry.key.as_bytes()],
             );
         }
     }
@@ -967,10 +962,7 @@ pub(crate) fn config_parse_with_warnings(
                 config.warnings.push(ConfigWarning {
                     path: Some(path.into()),
                     line: Some(number),
-                    message: OsString::from_vec(
-                        [b"failed to resolve include path ".as_slice(), include].concat(),
-                    ),
-                    literal_markup: false,
+                    ..warning("failed to resolve include path %s", &[include])
                 });
                 emit_warnings(&mut config, &mut emit)?;
                 number += 1;
@@ -982,14 +974,7 @@ pub(crate) fn config_parse_with_warnings(
                     config.warnings.push(ConfigWarning {
                         path: Some(path.into()),
                         line: Some(number),
-                        message: OsString::from_vec(
-                            [
-                                b"failed to open ".as_slice(),
-                                resolved.as_os_str().as_bytes(),
-                            ]
-                            .concat(),
-                        ),
-                        literal_markup: false,
+                        ..warning("failed to open %s", &[resolved.as_os_str().as_bytes()])
                     });
                     emit_warnings(&mut config, &mut emit)?;
                     number += 1;
@@ -1018,7 +1003,7 @@ pub(crate) fn config_parse_with_warnings(
         Ok(sections) => sections,
         Err(error) if error.is_fatal() => return Err(error.into()),
         Err(error) => {
-            warn(&mut config, OsString::from_vec(error.as_bytes().to_vec()));
+            warn(&mut config, "%s", &[error.as_bytes()]);
             emit_warnings(&mut config, &mut emit)?;
             return Ok(config);
         }
@@ -1036,7 +1021,7 @@ pub(crate) fn config_parse_with_warnings(
             }
             _ => {
                 if let Err(error) = add_layer(&mut config, &section.name) {
-                    warn(&mut config, OsString::from_vec(error.as_bytes().to_vec()));
+                    warn(&mut config, "%s", &[error.as_bytes()]);
                 }
                 Ok(())
             }
@@ -1058,7 +1043,7 @@ pub(crate) fn config_parse_with_warnings(
             let previous_warnings = config.warnings.len();
             let result = match &entry.value {
                 None => {
-                    warn(&mut config, "invalid binding");
+                    warn(&mut config, "invalid binding", &[]);
                     Ok(())
                 }
                 Some(value) => {
@@ -1069,7 +1054,7 @@ pub(crate) fn config_parse_with_warnings(
                     match config_add_entry(&mut config, &expression) {
                         Err(error) if error.is_fatal() => Err(error),
                         Err(error) => {
-                            warn(&mut config, OsString::from_vec(error.as_bytes().to_vec()));
+                            warn(&mut config, "%s", &[error.as_bytes()]);
                             Ok(())
                         }
                         Ok(()) => Ok(()),

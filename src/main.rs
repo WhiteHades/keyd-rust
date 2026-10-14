@@ -1,7 +1,10 @@
 // Rust entry point for keyd's compatible command-line interface. See LICENSE.
 use keyd::{cli, daemon, ipc, linux, log, monitor, runtime};
 use std::io::{self, IsTerminal, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd};
+#[cfg(not(target_env = "musl"))]
+use std::os::fd::FromRawFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+#[cfg(not(target_env = "musl"))]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
@@ -12,6 +15,12 @@ fn fatal_config(error: &io::Error) -> bool {
         .is_some_and(keyd::config::ParseError::is_fatal)
 }
 
+#[cfg(target_env = "musl")]
+fn check_buffer_capacity(_: BorrowedFd<'_>) -> usize {
+    1024
+}
+
+#[cfg(not(target_env = "musl"))]
 fn check_buffer_capacity(fd: BorrowedFd<'_>) -> usize {
     // SAFETY: fd remains borrowed; ManuallyDrop prevents the metadata wrapper closing it.
     let file = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(fd.as_raw_fd()) });
@@ -26,11 +35,35 @@ fn check_buffer_capacity(fd: BorrowedFd<'_>) -> usize {
 struct CheckOutput<'a, W> {
     output: &'a mut W,
     buffer: Vec<u8>,
+    line_buffered: bool,
+    #[cfg(target_env = "musl")]
+    terminal: bool,
 }
 
 impl<W: Write> Write for CheckOutput<'_, W> {
     fn write(&mut self, mut bytes: &[u8]) -> io::Result<usize> {
         let length = bytes.len();
+        #[cfg(target_env = "musl")]
+        if bytes.len() > self.buffer.capacity() - self.buffer.len() {
+            // __fwritex sends the pending buffer and whole formatter span on overflow.
+            self.output.write_all(&self.buffer)?;
+            self.buffer.clear();
+            self.output.write_all(bytes)?;
+            self.line_buffered = self.terminal;
+            return Ok(length);
+        }
+        if self.line_buffered
+            && let Some(end) = bytes.iter().rposition(|&byte| byte == b'\n')
+        {
+            self.output.write_all(&self.buffer)?;
+            self.buffer.clear();
+            self.output.write_all(&bytes[..=end])?;
+            #[cfg(target_env = "musl")]
+            {
+                self.line_buffered = self.terminal;
+            }
+            bytes = &bytes[end + 1..];
+        }
         while !bytes.is_empty() {
             if self.buffer.len() == self.buffer.capacity() {
                 self.flush()?;
@@ -87,12 +120,15 @@ fn listen(stdout: &mut impl Write) -> io::Result<i32> {
 
 fn run() -> io::Result<i32> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.is_empty() {
-        return daemon::run();
+    let command = args.first().map(|arg| cli::command(arg));
+    if command != Some(cli::Command::Check) {
+        log::debug_stdout(1, "src/main.rs", line!(), "Debug mode activated", &[])?;
     }
+    let Some(command) = command else {
+        return daemon::run();
+    };
     let socket = Path::new(keyd::SOCKET_PATH);
     let arguments = &args[1..];
-    let command = cli::command(&args[0]);
     if command == cli::Command::Monitor {
         if runtime::original_stdout_closed() && !(arguments.len() == 1 && arguments[0] == "-h") {
             return Err(log::system_error("fstat", io::Error::from_raw_os_error(9)));
@@ -118,30 +154,33 @@ fn run() -> io::Result<i32> {
         }
         cli::Command::Check => {
             let mut stderr = runtime::FdIo::new(stderr.as_fd())?;
-            if io::stdout().is_terminal() {
-                cli::check(
-                    arguments,
-                    Path::new(keyd::CONFIG_DIR),
-                    &mut stdout,
-                    &mut stderr,
-                )
-            } else {
-                let mut output = CheckOutput {
-                    output: &mut stdout,
-                    buffer: Vec::with_capacity(check_buffer_capacity(io::stdout().as_fd())),
-                };
-                let result = cli::check(
-                    arguments,
-                    Path::new(keyd::CONFIG_DIR),
-                    &mut output,
-                    &mut stderr,
-                );
-                // C abort discards pending fully buffered stdout, unlike normal exit.
-                if !result.as_ref().is_err_and(fatal_config) {
-                    output.flush()?;
-                }
-                result
+            let mut output = CheckOutput {
+                output: &mut stdout,
+                buffer: Vec::with_capacity(check_buffer_capacity(io::stdout().as_fd())),
+                // musl checks the destination only when stdout first sends bytes.
+                line_buffered: cfg!(target_env = "musl") || io::stdout().is_terminal(),
+                #[cfg(target_env = "musl")]
+                terminal: io::stdout().is_terminal(),
+            };
+            log::debug(
+                &mut output,
+                1,
+                "src/main.rs",
+                line!(),
+                "Debug mode activated",
+                &[],
+            )?;
+            let result = cli::check(
+                arguments,
+                Path::new(keyd::CONFIG_DIR),
+                &mut output,
+                &mut stderr,
+            );
+            // C abort discards pending stdout, including an unterminated terminal line.
+            if !result.as_ref().is_err_and(fatal_config) {
+                output.flush()?;
             }
+            result
         }
         cli::Command::Monitor => unreachable!(),
         cli::Command::Bind => cli::add_bindings(arguments, socket, &mut stdout),
@@ -171,10 +210,7 @@ fn main() {
         std::env::var_os("NO_COLOR").is_some(),
         level,
     );
-    let result = runtime::install_signals().and_then(|()| {
-        log::debug_stdout(1, "src/main.rs", line!(), "Debug mode activated", &[])?;
-        run()
-    });
+    let result = runtime::install_signals().and_then(|()| run());
     let status = if runtime::shutdown_signal() != 0 {
         runtime::shutdown_signal()
     } else {

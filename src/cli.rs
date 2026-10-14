@@ -129,26 +129,24 @@ pub fn check(
 }
 
 pub(crate) fn warning(warning: &config::ConfigWarning, stdout: &mut impl Write) -> io::Result<()> {
-    let styled = warning.literal_markup.then(|| {
-        log::colorize(
-            std::str::from_utf8(warning.message.as_bytes()).expect("fixed warning markup is UTF-8"),
-            log::colours_enabled(),
-        )
-    });
-    let message = styled.as_deref().unwrap_or(warning.message.as_bytes());
-    match (&warning.path, warning.line) {
-        (Some(path), Some(line)) => log::write(
-            stdout,
-            i32::MIN,
-            "\ty{WARNING:} b{%s}:r{%s}: %s\n",
-            &[
-                path.as_os_str().as_bytes(),
-                line.to_string().as_bytes(),
-                message,
-            ],
-        ),
-        _ => log::write(stdout, i32::MIN, "\ty{WARNING:} %s\n", &[message]),
+    let mut template = b"\ty{WARNING:} ".to_vec();
+    if let (Some(path), Some(line)) = (&warning.path, warning.line) {
+        template.extend_from_slice(b"b{");
+        for &byte in path.as_os_str().as_bytes() {
+            template.push(byte);
+            // Do not copy C's format-string access through a percent in a source path.
+            if byte == b'%' {
+                template.push(b'%');
+            }
+        }
+        template.extend_from_slice(format!("}}:r{{{line}}}: ").as_bytes());
     }
+    template.extend_from_slice(warning.template.as_bytes());
+    template.push(b'\n');
+    // config_warn truncates its snprintf template before colour/argument expansion.
+    template.truncate(1023);
+    let arguments: Vec<_> = warning.arguments.iter().map(|arg| arg.as_bytes()).collect();
+    log::write_template(stdout, &template, &arguments, log::colours_enabled())
 }
 
 pub fn add_bindings(args: &[OsString], socket: &Path, output: &mut impl Write) -> io::Result<i32> {

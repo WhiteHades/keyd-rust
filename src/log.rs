@@ -110,9 +110,12 @@ pub fn perror(label: &'static str, error: io::Error) -> io::Result<()> {
     )
 }
 
-// Only trusted templates pass through the colour parser, never user arguments.
+// Format arguments bypass colour parsing; warning source prefixes retain C's markup.
 pub fn colorize(template: &str, colours: bool) -> Vec<u8> {
-    let bytes = template.as_bytes();
+    colorize_bytes(template.as_bytes(), colours)
+}
+
+fn colorize_bytes(bytes: &[u8], colours: bool) -> Vec<u8> {
     let mut output = Vec::with_capacity(1024);
     let mut inside_escape = false;
     let mut index = 0;
@@ -161,18 +164,48 @@ pub fn write(
     if level > LOG_LEVEL.load(Ordering::Relaxed) {
         return Ok(());
     }
-    let template = colorize(template, colours_enabled());
+    write_template(output, template.as_bytes(), arguments, colours_enabled())
+}
+
+pub(crate) fn write_template(
+    output: &mut impl Write,
+    template: &[u8],
+    arguments: &[&[u8]],
+    colours: bool,
+) -> io::Result<()> {
+    let template = colorize_bytes(template, colours);
+    write_arguments(output, &template, arguments)
+}
+
+pub(crate) fn write_arguments(
+    output: &mut impl Write,
+    template: &[u8],
+    arguments: &[&[u8]],
+) -> io::Result<()> {
     let mut rendered = Vec::with_capacity(template.len());
+    #[cfg(target_env = "musl")]
+    let mut boundaries = vec![0];
     let mut index = 0;
     let mut argument = 0;
     while index < template.len() {
-        if template[index] == b'%' && template.get(index + 1) == Some(&b's') {
+        let specifier = if template[index..].starts_with(b"%s") {
+            2
+        } else if template[index..].starts_with(b"%ld") {
+            3
+        } else {
+            0
+        };
+        if specifier != 0 {
             let value = arguments.get(argument).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "missing log argument")
             })?;
+            #[cfg(target_env = "musl")]
+            boundaries.push(rendered.len());
             rendered.extend_from_slice(value);
+            #[cfg(target_env = "musl")]
+            boundaries.push(rendered.len());
             argument += 1;
-            index += 2;
+            index += specifier;
         } else if template[index] == b'%' && template.get(index + 1) == Some(&b'%') {
             rendered.push(b'%');
             index += 2;
@@ -181,6 +214,16 @@ pub fn write(
             index += 1;
         }
     }
+    #[cfg(target_env = "musl")]
+    {
+        // musl vfprintf writes each literal/argument span through __fwritex.
+        boundaries.push(rendered.len());
+        for span in boundaries.windows(2) {
+            output.write_all(&rendered[span[0]..span[1]])?;
+        }
+        Ok(())
+    }
+    #[cfg(not(target_env = "musl"))]
     output.write_all(&rendered)
 }
 
