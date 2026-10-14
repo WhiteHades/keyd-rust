@@ -13,19 +13,24 @@
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 </div>
 
-keyd-rust is a Linux keyboard remapping daemon written in Rust, based on
-[keyd](https://github.com/rvaiya/keyd). It works in Wayland, X11 and the console.
+keyd-rust remaps Linux keyboards in Wayland, X11 and the console.
+It is a Rust rewrite of [keyd](https://github.com/rvaiya/keyd).
 
 ## Differences from keyd
 
-- The daemon and command-line tools are written in Rust, without a C engine or bridge.
-- `overloadd` adds separate actions for a tap, double tap and hold. Its layer
-  activates immediately, and the double tap has separate gap and release deadlines.
+| Comparison | Original keyd | keyd-rust |
+| --- | --- | --- |
+| Implementation | C daemon, some Python tools | Rust, no C engine or bridge |
+| Double-tap action | No `overloadd` | Tap, double tap, immediate held layer; configurable timing |
+| Device removal | Keeps removed-device descriptors | Closes them |
+| Existing mappings | Original trace fixtures | All 94 original traces passed |
+
+Linux kernel checks passed on x86_64, i686 and ARM64, including x86_64 musl.
+Lower latency, memory use or binary size have not been established.
 
 ## Install
 
-You need Rust 1.98 or newer, Cargo, make and scdoc. From a clean checkout,
-build and install an Arch Linux package:
+You need Rust 1.98+, Cargo, make and scdoc. On Arch Linux:
 
 ```sh
 git clone https://github.com/WhiteHades/keyd-rust.git
@@ -35,18 +40,16 @@ bash packaging/build
 sudo pacman -U .tmp/package/*.pkg.tar.zst
 ```
 
-On other Linux distributions, use `make && make man && sudo make install`.
-The daemon needs access to `/dev/input` and `/dev/uinput`, and `getent` must
-be installed. Stop and remove the original keyd before starting keyd-rust.
-Keep a copy of your old configuration.
+Elsewhere, use `make && make man && sudo make install`.
+The daemon needs `getent` and access to `/dev/input` and `/dev/uinput`.
+Back up your configuration and stop/remove original keyd before starting keyd-rust.
 
 ## Configure
 
-Create `/etc/keyd-rust/default.conf`:
+Create `/etc/keyd-rust/default.conf`, or reuse a keyd config:
 
 ```sh
-sudo install -d /etc/keyd-rust
-sudoedit /etc/keyd-rust/default.conf
+sudo install -d /etc/keyd-rust && sudoedit /etc/keyd-rust/default.conf
 ```
 
 ```ini
@@ -65,75 +68,63 @@ k = down
 l = right
 ```
 
-The example swaps Escape and Caps Lock. Hold Right Control with i/j/k/l
-for arrow keys. Choose your own keys and layer names.
-
-Check the file before starting the service:
+The example swaps Escape/Caps Lock and makes Right Control+i/j/k/l arrows.
+Validate before starting:
 
 ```sh
-sudo keyd-rust check
-sudo systemctl enable --now keyd-rust
+sudo keyd-rust check && sudo systemctl enable --now keyd-rust
 ```
 
-After editing a config, run `sudo keyd-rust check && sudo keyd-rust reload`.
+After edits, run `sudo keyd-rust check && sudo keyd-rust reload`.
 Without systemd, run `keyd-rust` as root through your init system.
-Existing keyd configs use the same syntax and can be copied into `/etc/keyd-rust/`.
 
 ## Syntax
 
-A `.conf` file begins with `[ids]`. Use `*` for all keyboards, a device ID
-for one keyboard, or `-0123:4567` after `*` to exclude a device.
-Run `sudo keyd-rust monitor` to find device IDs and key names, or
-`keyd-rust list-keys` to list every key name.
-
-`[main]` contains the default bindings. Other sections define layers, which
-are sets of bindings activated by a key. Unmapped keys keep their usual behavior.
-Lines beginning with `#` are comments, and the last binding for a key wins.
+Files use `.conf` and start with `[ids]`. `sudo keyd-rust monitor` shows IDs and
+pressed keys; `keyd-rust list-keys` lists all names. `#` starts a comment line.
+The last binding wins.
 
 | Binding | What it does |
 | --- | --- |
-| `a = b` | A produces B. |
-| `a = C-c` | A produces Ctrl+C. |
-| `j+k = esc` | J and K pressed together produce Escape. |
-| `f1 = macro(hello space world enter)` | F1 types "hello world" and presses Enter. |
-| `rightcontrol = layer(arrows)` | Right Control activates `arrows` while held. |
-| `space = overload(shift, space)` | Space is Shift while held and Space when tapped. |
-| `f2 = overloadd(arrows, tab, esc, 250)` | F2 is Tab on tap, Escape on double tap and `arrows` while held. |
-| `a = noop` | A produces nothing. |
+| `a = b` | Map A to B. |
+| `a = C-c` | Send Ctrl+C. |
+| `j+k = esc` | J and K together produce Escape. |
+| `f1 = macro(hello space world enter)` | Type "hello world", then Enter. |
+| `rightcontrol = layer(arrows)` | Hold the `arrows` layer. |
+| `space = overload(shift, space)` | Tap Space or hold Shift. |
+| `f2 = overloadd(arrows, tab, esc, 250)` | Tap Tab, double tap Escape or hold `arrows`. |
+| `a = noop` | Disable A. |
 
-Modifier prefixes are `C` for Control, `A` for Alt, `S` for Shift,
-`M` for Meta/Super and `G` for AltGr. Combine them with hyphens, as in `C-S-z`.
-Use key names on the left, not modifier prefixes; put Ctrl+J bindings in `[control]`.
+Prefixes are `C` Control, `A` Alt, `S` Shift, `M` Meta/Super and `G` AltGr.
+Combine them as `C-S-z`. Bind Ctrl+J with `j = ...` in `[control]`, not `C-j = ...`.
 
-The final `overloadd` argument is a user-chosen timeout in milliseconds.
-The second press must start before the first release's deadline and finish
-within its own timeout. A lone tap waits for the timeout; the held layer
-activates immediately.
+For `overloadd`, choose a timeout in milliseconds. The second press must start
+before the first release's deadline, then finish within its own timeout.
+A lone tap waits; holding activates the layer immediately.
 
-`[arrows:C]` applies Control to unbound keys while `arrows` is active.
-Explicit bindings omit that layer's modifier. `[control+shift]` defines
-bindings used when both layers are active; define custom component layers first.
-
-Use `oneshot(shift)` for the next key, `toggle(arrows)` to turn a layer on or off,
-and `clear()` to clear toggled and oneshot layers. `setlayout(name)` selects
-a layout defined by `[name:layout]`.
-
-Put timing options such as `chord_timeout = 50` under `[global]`.
-Use `[aliases]` to give keys shared names. `include common` loads a file from
-`/etc/keyd-rust/` or the installed data directory; place it after `[ids]`.
+| Syntax | Purpose |
+| --- | --- |
+| `[ids]` | `*` matches all keyboards; ID selects one; `-ID` after `*` excludes it. |
+| `[main]` / `[arrows]` | Default bindings / custom layer. Unmapped keys are unchanged. |
+| `[arrows:C]` | Control on unbound keys; explicit bindings omit it. |
+| `[control+shift]` | Both layers active. Define custom components first. |
+| `oneshot(shift)` / `toggle(arrows)` | Layer for the next key / turn a layer on or off. |
+| `clear()` | Clear toggled and oneshot layers. |
+| `[name:layout]` / `setlayout(name)` | Defines / selects a layout. |
+| `[global]` | Options, such as `chord_timeout = 50`. |
+| `[aliases]` | Shared key names. |
+| `include common` | Load from `/etc/keyd-rust/` or installed data, after `[ids]`. |
 
 ## Help and recovery
 
-Hold **Backspace + Escape + Enter** to terminate the daemon if a mapping makes
-the keyboard unusable. Fix the config, then restart the service.
-Read errors with `sudo journalctl -eu keyd-rust`.
+Hold **Backspace + Escape + Enter** to stop the daemon if the keyboard becomes
+unusable. Fix the config and restart. Read errors with `sudo journalctl -eu keyd-rust`.
 
-Only use trusted configurations. `command(...)` runs shell commands as the
-daemon's user, usually root. Treat membership in the `keyd-rust` group as root access.
+Only use trusted configs. `command(...)` runs as the daemon's user, usually root.
+Treat `keyd-rust` group membership as root access.
 
-The [manual](docs/keyd-rust.scdoc) covers every action, timing option, macros,
-aliases, includes and Unicode setup. Read it locally with `man keyd-rust`.
-See the [examples](examples/) and
-[application mapper](docs/keyd-rust-application-mapper.scdoc) for more configurations.
+Read the [manual](docs/keyd-rust.scdoc), or `man keyd-rust`, for all actions, options
+and Unicode setup. More examples are in [examples](examples/) and the
+[application mapper](docs/keyd-rust-application-mapper.scdoc) manual.
 
 MIT license. See [LICENSE](LICENSE).
