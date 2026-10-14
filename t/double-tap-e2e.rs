@@ -223,6 +223,29 @@ fn main() {
         check(&k, &expected);
     }
 
+    for release in [129, 130, 131] {
+        let mut k = keyboard(&path);
+        k.eval("semicolon = overloadd(nav, semicolon, enter, 120)")
+            .unwrap();
+        tap(&mut k, KEYD_SEMICOLON, 0);
+        event(&mut k, KEYD_SEMICOLON, 1, 50);
+        event(&mut k, KEYD_SEMICOLON, 0, release);
+        event(&mut k, 0, 0, 300);
+        if release < 130 {
+            check(&k, &[(KEYD_ENTER, 1), (KEYD_ENTER, 0)]);
+        } else {
+            check(
+                &k,
+                &[
+                    (KEYD_SEMICOLON, 1),
+                    (KEYD_SEMICOLON, 0),
+                    (KEYD_SEMICOLON, 1),
+                    (KEYD_SEMICOLON, 0),
+                ],
+            );
+        }
+    }
+
     let mut k = keyboard(&path);
     tap(&mut k, KEYD_SEMICOLON, 0);
     k.eval("reset").unwrap();
