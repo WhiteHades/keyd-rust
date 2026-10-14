@@ -8,9 +8,11 @@ CONFIG_DIR?=/etc/keyd
 SOCKET_PATH=/var/run/keyd.socket
 CARGO?=cargo
 CARGO_TARGET_DIR?=target
+BUILD_DIR=$(CARGO_TARGET_DIR)$(if $(CARGO_BUILD_TARGET),/$(CARGO_BUILD_TARGET))
 
 quote = '$(subst ','"'"',$(1))'
-BUILD_ENV = KEYD_BUILD_VERSION=$(call quote,v$(VERSION) ($(COMMIT))) \
+BUILD_ENV = $(if $(CARGO_BUILD_TARGET),CARGO_BUILD_TARGET=$(call quote,$(CARGO_BUILD_TARGET))) \
+	KEYD_BUILD_VERSION=$(call quote,v$(VERSION) ($(COMMIT))) \
 	KEYD_PREFIX=$(call quote,$(PREFIX)) \
 	KEYD_CONFIG_DIR=$(call quote,$(CONFIG_DIR)) \
 	KEYD_DATA_DIR=$(call quote,$(PREFIX)/share/keyd) \
@@ -19,12 +21,12 @@ BUILD_ENV = KEYD_BUILD_VERSION=$(call quote,v$(VERSION) ($(COMMIT))) \
 
 all:
 	$(BUILD_ENV) $(CARGO) build --locked --release --target-dir $(call quote,$(CARGO_TARGET_DIR)) --bin keyd --bin keyd-application-mapper
-	install -Dm755 $(call quote,$(CARGO_TARGET_DIR)/release/keyd) bin/keyd
-	install -Dm755 $(call quote,$(CARGO_TARGET_DIR)/release/keyd-application-mapper) bin/keyd-application-mapper
+	install -Dm755 $(call quote,$(BUILD_DIR)/release/keyd) bin/keyd
+	install -Dm755 $(call quote,$(BUILD_DIR)/release/keyd-application-mapper) bin/keyd-application-mapper
 debug:
 	$(BUILD_ENV) $(CARGO) build --locked --target-dir $(call quote,$(CARGO_TARGET_DIR)) --bin keyd --bin keyd-application-mapper
-	install -Dm755 $(call quote,$(CARGO_TARGET_DIR)/debug/keyd) bin/keyd
-	install -Dm755 $(call quote,$(CARGO_TARGET_DIR)/debug/keyd-application-mapper) bin/keyd-application-mapper
+	install -Dm755 $(call quote,$(BUILD_DIR)/debug/keyd) bin/keyd
+	install -Dm755 $(call quote,$(BUILD_DIR)/debug/keyd-application-mapper) bin/keyd-application-mapper
 compose:
 	$(BUILD_ENV) $(CARGO) run --locked --release --target-dir $(call quote,$(CARGO_TARGET_DIR)) --bin generate_xcompose
 man:
